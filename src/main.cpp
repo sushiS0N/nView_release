@@ -7,13 +7,9 @@
 #include "shader.h"
 #include <cstdio>
 
-float vertices[] = {
-    // Vertex 1 (Top) - X, Y, Z, R, G, B, A
-    0.0f, 0.5f, 0.5f, 1.0f, 0.0f, 0.0f, 1.0f,
-    // Vertex 2 (Right)
-    0.5f, -0.5f, 0.5f, 0.0f, 1.0f, 0.0f, 1.0f,
-    // Vertex 3 (Left)
-    -0.5f, -0.5f, 0.5f, 0.0f, 0.0f, 1.0f, 1.0f};
+#define NUM_POINTS 100
+
+float vertices[NUM_POINTS * 7];
 
 static struct
 {
@@ -22,10 +18,51 @@ static struct
     sg_pass_action pass_action;
 } state;
 
+float lerp(float a, float b, float t)
+{
+    return a + (b - a) * t;
+}
+
 void frame()
 {
-    float t = (float)sapp_frame_count() * 0.05f;
-    vertices[1] = 0.5f + sinf(t) * 0.25f;
+    // Control points where the middle one oscilates sin(time)
+    float p0_x = -0.5f, p0_y = -0.5f;
+
+    float time = (float)sapp_frame_count() * 0.05f;
+    float p1_x = 0.0f, p1_y = 0.0f + sin(time) * 0.5f;
+
+    float p2_x = 0.8f, p2_y = 0.0f;
+
+    // De Casteliauj
+    for (int i = 0; i < NUM_POINTS; i++)
+    {
+        // normalize the t value
+        float t = (float)i / (float)(NUM_POINTS - 1);
+
+        // find intermediate points
+        float ax = lerp(p0_x, p1_x, t);
+        float ay = lerp(p0_y, p1_y, t);
+
+        float bx = lerp(p1_x, p2_x, t);
+        float by = lerp(p1_y, p2_y, t);
+
+        // Final position
+        float x = lerp(ax, bx, t);
+        float y = lerp(ay, by, t);
+
+        // Fill buffer
+        int index = i * 7; // 7 floats per vertex
+        vertices[index + 0] = x;
+        vertices[index + 1] = y;
+        vertices[index + 2] = 0.0f;
+
+        // Color
+        vertices[index + 3] = 1.0f - t;
+        vertices[index + 4] = 0.0f;
+        vertices[index + 5] = t * sin(time);
+        vertices[index + 6] = 1.0f;
+    }
+
     sg_update_buffer(state.bind.vertex_buffers[0], SG_RANGE(vertices));
 
     sg_pass pass = {};
@@ -35,7 +72,7 @@ void frame()
     sg_begin_pass(pass);
     sg_apply_pipeline(state.pip);
     sg_apply_bindings(state.bind);
-    sg_draw(0, 3, 1);
+    sg_draw(0, NUM_POINTS, 1);
     sg_end_pass();
     sg_commit();
 }
@@ -83,7 +120,7 @@ void init()
     pip_desc.shader = shd;
     pip_desc.layout.attrs[ATTR_shd_pos].format = SG_VERTEXFORMAT_FLOAT3;
     pip_desc.layout.attrs[ATTR_shd_color0].format = SG_VERTEXFORMAT_FLOAT4;
-
+    pip_desc.primitive_type = SG_PRIMITIVETYPE_LINE_STRIP;
     pip_desc.label = "triangle_pipeline";
 
     state.pip = sg_make_pipeline(pip_desc);
