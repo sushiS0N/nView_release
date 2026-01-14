@@ -1,0 +1,18 @@
+.vscode/
+.vs/
+
+# Build output
+build/
+out/
+cmake-build-debug/
+
+# --- C++ Temporary Files ---
+*.obj
+*.pdb
+*.ipdb
+*.iobj
+*.tlog
+
+# --- OS Metadata ---
+.DS_Store
+Thumbs.db
