@@ -6,6 +6,8 @@
 #include "sokol_glue.h"
 #include "shader.h"
 #include <cstdio>
+#include <cmath>
+using namespace std;
 
 #define NUM_POINTS 100
 
@@ -18,9 +20,19 @@ static struct
     sg_pass_action pass_action;
 } state;
 
+// Interpolations
 float lerp(float a, float b, float t)
 {
     return a + (b - a) * t;
+}
+
+float cubic_bernstein(float t, float p0, float p1, float p2, float p3)
+{
+    float invT = 1 - t;
+    return (p0 * std::pow(invT, 3) +
+            p1 * 3 * std::pow(invT, 2) * t +
+            p2 * 3 * invT * std::pow(t, 2) +
+            p3 * std::pow(t, 3));
 }
 
 void frame()
@@ -29,26 +41,20 @@ void frame()
     float p0_x = -0.5f, p0_y = -0.5f;
 
     float time = (float)sapp_frame_count() * 0.05f;
-    float p1_x = 0.0f, p1_y = 0.0f + sin(time) * 0.5f;
+    float p1_x = 0.0f, p1_y = 0.0f + sin(time) * 0.3f;
 
-    float p2_x = 0.8f, p2_y = 0.0f;
+    float p2_x = 0.7f, p2_y = -0.8f;
+    float p3_x = 0.9f, p3_y = 0.0f;
 
-    // De Casteliauj
+    // Bernstein evaluation
     for (int i = 0; i < NUM_POINTS; i++)
     {
         // normalize the t value
         float t = (float)i / (float)(NUM_POINTS - 1);
 
-        // find intermediate points
-        float ax = lerp(p0_x, p1_x, t);
-        float ay = lerp(p0_y, p1_y, t);
-
-        float bx = lerp(p1_x, p2_x, t);
-        float by = lerp(p1_y, p2_y, t);
-
-        // Final position
-        float x = lerp(ax, bx, t);
-        float y = lerp(ay, by, t);
+        // Bernstein points
+        float x = cubic_bernstein(t, p0_x, p1_x, p2_x, p3_x);
+        float y = cubic_bernstein(t, p0_y, p1_y, p2_y, p3_y);
 
         // Fill buffer
         int index = i * 7; // 7 floats per vertex
