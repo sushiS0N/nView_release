@@ -59,7 +59,8 @@ void BezierPatch::generate_mesh()
     std::vector<uint16_t> indices(resolution * resolution * 6);
 
     int vtx_idx = 0;
-
+    float min_z = 0.0f;
+    float max_z = 0.3f;
     // Compute vertex positions
     for (int i = 0; i <= resolution; i++)
     {
@@ -78,10 +79,11 @@ void BezierPatch::generate_mesh()
             vertices[arr_idx + 1] = out_pos[1];
             vertices[arr_idx + 2] = out_pos[2];
 
+            float normalized_z = (out_pos[2] - min_z) / (max_z - min_z);
             // store vertex color
-            vertices[arr_idx + 3] = out_pos[2];
-            vertices[arr_idx + 4] = out_pos[2];
-            vertices[arr_idx + 5] = out_pos[2];
+            vertices[arr_idx + 3] = lerp(0.1f, 1.0f, normalized_z);
+            vertices[arr_idx + 4] = 0.0f;
+            vertices[arr_idx + 5] = lerp(0.1f, 1.0f, (1 - normalized_z));
             vertices[arr_idx + 6] = 1.0f;
         }
     }

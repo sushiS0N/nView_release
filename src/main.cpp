@@ -1,3 +1,6 @@
+#define HANDMADE_MATH_IMPLEMENTATION
+#include "HandmadeMath.h"
+
 #define SOKOL_IMPL
 #define SOKOL_D3D11
 
@@ -8,14 +11,16 @@
 
 #include "shader.h"
 #include "bezier_patch.h"
+#include "camera.h"
 
 float cp[48] = {
-    -0.75f, -0.75f, 0.0f, -0.25f, -0.75f, 0.1f, 0.25f, -0.75f, 0.1f, 0.75f, -0.75f, 0.0f,
+    -5.75f, -2.75f, 0.0f, -0.25f, -0.75f, 0.1f, 0.25f, -0.75f, 0.1f, 0.75f, -0.75f, 0.0f,
     -0.75f, -0.25f, 0.1f, -0.25f, -0.25f, 0.3f, 0.25f, -0.25f, 0.3f, 0.75f, -0.25f, 0.1f,
     -0.75f, 0.25f, 0.1f, -0.25f, 0.25f, 0.3f, 0.25f, 0.25f, 0.3f, 0.75f, 0.25f, 0.1f,
     -0.75f, 0.75f, 0.0f, -0.25f, 0.75f, 0.1f, 0.25f, 0.75f, 0.1f, 0.75f, 0.75f, 0.0f};
 
 BezierPatch *patch = new BezierPatch(cp, 10);
+Camera *camera = new Camera(HMM_V3(0, 0, 0), 2.0f, 45.0f, 30.0f);
 
 static struct
 {
@@ -33,8 +38,17 @@ void frame()
     sg_begin_pass(pass);
     sg_apply_pipeline(state.pip);
 
-    patch->render();
+    // Calculate MVP matix
+    HMM_Mat4 proj = HMM_Perspective_RH_ZO(60.0f, 640.0f / 480.0f, 0.01f, 10.0f);
+    // HMM_Mat4 view = HMM_LookAt_RH(HMM_V3(0, 0.5f, 1.5f), HMM_V3(0, 0, 0), HMM_V3(0, 1, 0));
+    HMM_Mat4 view = camera->get_view_matrix();
+    HMM_Mat4 model = HMM_M4D(1.0f);
+    HMM_Mat4 mvp = HMM_MulM4(proj, HMM_MulM4(view, model));
 
+    // Pass to shader
+    sg_apply_uniforms(0, SG_RANGE_REF(mvp));
+
+    patch->render();
     sg_end_pass();
     sg_commit();
 }
@@ -46,6 +60,35 @@ void event(const sapp_event *ev)
         if (ev->key_code == SAPP_KEYCODE_ESCAPE)
         {
             sapp_quit();
+        }
+    }
+
+    if (ev->type == SAPP_EVENTTYPE_MOUSE_SCROLL)
+    {
+        camera->zoom(ev->scroll_y * 0.5f);
+    }
+
+    if (ev->type == SAPP_EVENTTYPE_MOUSE_DOWN)
+    {
+        if (ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
+        {
+            sapp_lock_mouse(true);
+        }
+    }
+
+    if (ev->type == SAPP_EVENTTYPE_MOUSE_UP)
+    {
+        if (ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
+        {
+            sapp_lock_mouse(false);
+        }
+    }
+
+    if (ev->type == SAPP_EVENTTYPE_MOUSE_MOVE)
+    {
+        if (sapp_mouse_locked())
+        {
+            camera->orbit(ev->mouse_dx * 0.25f, ev->mouse_dy * 0.25f);
         }
     }
 }
@@ -74,7 +117,7 @@ void init()
 
     state.pip = sg_make_pipeline(pip_desc);
     state.pass_action.colors[0].load_action = SG_LOADACTION_CLEAR;
-    state.pass_action.colors[0].clear_value = {0.2f, 0.2f, 0.2f, 1.0f};
+    state.pass_action.colors[0].clear_value = {0.1f, 0.1f, 0.1f, 1.0f};
 }
 
 void cleanup()

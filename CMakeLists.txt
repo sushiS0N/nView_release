@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 4.1)
 project(nView CXX)
 
-add_executable(nView src/main.cpp src/bezier_patch.cpp src/shader.h)
-
+add_executable(nView src/main.cpp src/camera.cpp src/bezier_patch.cpp src/shader.h)
+# add_compile_definitions(HANDMADE_MATH_USE_DEGREES)
 # Include directories
 target_include_directories(nView PRIVATE ${CMAKE_SOURCE_DIR}/deps)
 

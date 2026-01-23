@@ -1,6 +1,6 @@
 #pragma once
 
-// Bezier_patch header
+/// BEZIER PATCH HEADER
 class BezierPatch
 {
 public:
