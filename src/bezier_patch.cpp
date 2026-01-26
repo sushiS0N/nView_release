@@ -62,6 +62,7 @@ void BezierPatch::generate_mesh()
     float min_z = 0.0f;
     float max_z = 0.3f;
     // Compute vertex positions
+    printf("Control points: ");
     for (int i = 0; i <= resolution; i++)
     {
         float u = (float)i / (float)resolution;
@@ -70,7 +71,7 @@ void BezierPatch::generate_mesh()
             float v = (float)j / (float)resolution;
             float out_pos[3];
             evaluate(u, v, out_pos);
-
+            
             vtx_idx = i * (resolution + 1) + j;
             int arr_idx = vtx_idx * 7;
 
@@ -131,6 +132,7 @@ void BezierPatch::render()
     sg_bindings bind = {};
     bind.vertex_buffers[0] = this->vertex_buffer;
     bind.index_buffer = this->index_buffer;
+
     sg_apply_bindings(bind);
     sg_draw(0, this->num_indices, 1);
 }
