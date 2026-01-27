@@ -30,6 +30,18 @@ void Camera::orbit(float delta_yaw, float delta_pitch)
 {
     yaw += delta_yaw;
     pitch += delta_pitch;
+
+    if (pitch > 89.0f) pitch = 89.0f;
+    if (pitch < -89.0f) pitch = -89.0f;
+
+    if (yaw < 0.0f)
+    {
+        yaw += 360.0f;
+    }
+    if (yaw > 360.0f)
+    {
+        yaw -= 360.0f;
+    }
 }
 
 // Zoom - change distance
@@ -54,7 +66,7 @@ HMM_Mat4 Camera::get_view_matrix() const
     HMM_Vec3 position = calculate_position();
 
     // convetion mismatch with HMM flipping Y for OpenGL standrds
-    return HMM_LookAt_RH(position, target, HMM_V3(0.0f, -1.0f, 0.0f));
+    return HMM_LookAt_RH(position, target, HMM_V3(0.0f, 1.0f, 0.0f));
 }
 
 // Reset camera

@@ -1,5 +1,8 @@
 #include "sokol_gfx.h"
+#include "shader.h"
 #include "gizmo.h"
+
+#include "string.h"
 
 // Utilities
 HMM_Mat4 extract_rotation(const HMM_Mat4& view)
@@ -50,8 +53,14 @@ void Gizmo::render_axis_indicator(const HMM_Mat4 &mvp)
 
     HMM_Mat4 mvp_gizmo = HMM_MulM4(screenOffset, HMM_MulM4(ortho,rotationOnly));
    */
+    // Struct for shader
+    vs_params_t params = {};
+    memcpy(params.mvp, &mvp, sizeof(float)*16);
+    params.point_size = 10.0f;
+
 
     sg_apply_bindings(axis_gizmo_bind);
-    sg_apply_uniforms(0, SG_RANGE_REF(mvp));
+    sg_apply_uniforms(0, SG_RANGE_REF(params));
+    
     sg_draw(0, 6, 1);
 }

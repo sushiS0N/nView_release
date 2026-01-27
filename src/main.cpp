@@ -44,7 +44,7 @@ std::vector<float> knots = {0.0f,0.0f,0.0f,0.0f,0.5f,1.0f,1.0f,1.0f,1.0f};
 Bspline *bspline = new Bspline(bsp, knots, 3, 1000);
 
 // Camera
-Camera *camera = new Camera(HMM_V3(0, 0, 0), 8.0f, 45.0f, 30.0f);
+Camera *camera = new Camera(HMM_V3(0, 0, 0), 25.0f, 45.0f, 30.0f);
 
 // Utils
 Gizmo *gizmo;
@@ -67,7 +67,8 @@ void frame()
     pass.swapchain = sglue_swapchain();
 
     // Calculate MVP matix
-    HMM_Mat4 proj = HMM_Perspective_RH_NO(35.0f, 640.0f / 480.0f, 0.01f, 100.0f);
+    float fov_rad = 60.0f* (HMM_PI / 180.0f);
+    HMM_Mat4 proj = HMM_Perspective_RH_NO(fov_rad, 640.0f / 480.0f, 0.01f, 100.0f);
      // HMM_Mat4 view = HMM_LookAt_RH(HMM_V3(0, 0.5f, 1.5f), HMM_V3(0, 0, 0), HMM_V3(0, 1, 0));
     HMM_Mat4 view = camera->get_view_matrix();
     HMM_Mat4 model = HMM_M4D(1.0f);

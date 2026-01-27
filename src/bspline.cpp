@@ -1,4 +1,5 @@
 #include "sokol_gfx.h"
+#include "shader.h"
 
 #include "stdio.h"
 #include <vector>
@@ -147,7 +148,7 @@ void Bspline::generate_bspline()
     crv_bind.vertex_buffers[0] = this->crv_vtx_buf;
 
     // Color the points
-    std::vector<float> color_cp = std::move(colour_points(1.0f, 0.0f, 0.0f, 1.0f));
+    std::vector<float> color_cp = std::move(colour_points(1.0f, 0.0f, 1.0f, 1.0f));
 
     // Create control point buffer
     sg_buffer_desc crv_pt_buf_desc = {};
@@ -162,14 +163,25 @@ void Bspline::generate_bspline()
 void Bspline::render_spline(const HMM_Mat4 &mvp)
 {
     sg_apply_bindings(crv_bind);
-    sg_apply_uniforms(0, SG_RANGE_REF(mvp));
+
+    // Struct for shader
+    vs_params_t params = {};
+    memcpy(params.mvp, &mvp, sizeof(float)*16);
+    params.point_size = 10.0f;
+
+    sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, this->num_pts + 1, 1);
 }
 
 void Bspline::render_control_points(const HMM_Mat4 &mvp)
 {
-
     sg_apply_bindings(cp_bind);
-    sg_apply_uniforms(0, SG_RANGE_REF(mvp));
+
+    // Struct for shader
+    vs_params_t params = {};
+    memcpy(params.mvp, &mvp, sizeof(float)*16);
+    params.point_size = 10.0f;
+
+    sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, n + 1, 1);
 }

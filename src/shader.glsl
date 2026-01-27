@@ -2,7 +2,7 @@
 layout(binding=0)uniform vs_params
 {
     mat4 mvp;
-    //float point_size;
+    float point_size;
 };
 
 in vec4 pos;
@@ -13,7 +13,7 @@ void main()
 {
     gl_Position = mvp * pos;
     color = color0;
-    //gl_PointSize = point_size;
+    gl_PointSize = point_size;
 }
 @end 
 
