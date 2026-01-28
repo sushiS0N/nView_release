@@ -32,10 +32,16 @@ std::vector<float> Bspline::colour_points(float r, float g, float b, float a)
     return colored_cp;
 }
 
-Bspline::Bspline(std::vector<float> cp, std::vector<float> knots, int degree, int num_pts)
+Bspline::Bspline(std::vector<float> cp, std::vector<float> knots, int degree, int num_pts, std::vector<float> weights_in)
 {
     control_points = std::move(cp);
     knot_vector = std::move(knots);
+
+    if(weights_in.empty())
+    {
+        this->weights.resize(control_points.size()/3, 1.0f);
+    }
+    else this->weights = std::move(weights_in);
 
     // Validate knot vector is non-decreasing
     for (size_t i = 1; i < knot_vector.size(); i++)
@@ -43,11 +49,25 @@ Bspline::Bspline(std::vector<float> cp, std::vector<float> knots, int degree, in
         assert(knot_vector[i] >= knot_vector[i - 1] && "Knot vector must be non-decreasing");
     }
 
+    // Create the 4D homogeneous control points array
+    weighted_points.resize(control_points.size()/3*4, 0.0f);
+    int wp_idx, cp_idx = 0;
+    for(int i = 0; i<weights.size(); i++)
+    {
+        wp_idx = i*4;
+        cp_idx = i*3;
+        weighted_points[wp_idx] = control_points[cp_idx]*this->weights[i];
+        weighted_points[wp_idx+1] = control_points[cp_idx+1]*this->weights[i];
+        weighted_points[wp_idx+2] = control_points[cp_idx+2]*this->weights[i];
+        weighted_points[wp_idx+3] = this->weights[i];
+    }
+
     n = control_points.size() / 3 - 1;
     p = degree;
     m = knot_vector.size() - 1;
     this->num_pts = num_pts;
 }
+
 
 int Bspline::find_span(float u)
 {
@@ -98,6 +118,15 @@ void Bspline::curve_point(float u, float *out_pos)
 {
     int span = find_span(u);
     compute_basis_funs(span, u);
+    float cw[4] = {0.0f,0.0f,0.0f,0.0f};
+
+
+    printf("\n=== u=%f, span=%d ===\n", u, span);
+    printf("Basis functions: ");
+    for(int i = 0; i <= p; i++) {
+        printf("N[%d]=%f ", i, basis_funs[i]);
+    }
+    printf("\n");
 
     out_pos[0] = 0.0f;
     out_pos[1] = 0.0f;
@@ -105,12 +134,22 @@ void Bspline::curve_point(float u, float *out_pos)
 
     for (int i = 0; i <= p; i++)
     {
-        int cp_idx = (span - p + i) * 3;
-        // Point position
-        out_pos[0] += basis_funs[i] * control_points[cp_idx];
-        out_pos[1] += basis_funs[i] * control_points[cp_idx + 1];
-        out_pos[2] += basis_funs[i] * control_points[cp_idx + 2];
-    }
+        int cp_idx = (span - p + i) * 4;
+        printf("i=%d, cp_idx=%d, wp=[%f,%f,%f,%f]\n", 
+               i, cp_idx, 
+               weighted_points[cp_idx], 
+               weighted_points[cp_idx+1],
+               weighted_points[cp_idx+2], 
+               weighted_points[cp_idx+3]);
+        cw[0] += basis_funs[i] * weighted_points[cp_idx];
+        cw[1] += basis_funs[i] * weighted_points[cp_idx + 1];
+        cw[2] += basis_funs[i] * weighted_points[cp_idx + 2];
+        cw[3] += basis_funs[i] * weighted_points[cp_idx + 3];
+    }    
+    printf("cw=[%f,%f,%f,%f]\n", cw[0], cw[1], cw[2], cw[3]);
+    out_pos[0] = cw[0]/cw[3];
+    out_pos[1] = cw[1]/cw[3];
+    out_pos[2] = cw[2]/cw[3];
 }
 
 void Bspline::generate_bspline()

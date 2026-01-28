@@ -32,16 +32,27 @@ float cp[48] = {
 };
 BezierPatch *patch = new BezierPatch(cp, 10);
 
+// std::vector<float> bsp={
+//     0.0f, 0.0f, 0.0f, // P0
+//     3.0f, 0.0f, 5.0f, // P1
+//     6.0f, 0.0f, 1.0f, // P2 
+//     8.0f, 0.0f, -12.0f, // P3
+//     11.0f, 0.0f, 5.0f, // P4
+// };
+//std::vector<float> knots = {0.0f,0.0f,0.0f,0.0f,0.5f,1.0f,1.0f,1.0f,1.0f};
+
+
 std::vector<float> bsp={
     0.0f, 0.0f, 0.0f, // P0
-    3.0f, 0.0f, 5.0f, // P2
-    6.0f, 0.0f, 1.0f, // P3 
-    8.0f, 0.0f, -12.0f, // P4
-    11.0f, 0.0f, 5.0f, // P5
+    6.0f, 0.0f, 0.0f, // P1 
+    6.0f, 0.0f, 6.0f, // P2
+    0.0f, 0.0f, 6.0f, // P3
+    0.0f, 0.0f, 0.0f  // P4
 };
-
 std::vector<float> knots = {0.0f,0.0f,0.0f,0.0f,0.5f,1.0f,1.0f,1.0f,1.0f};
-Bspline *bspline = new Bspline(bsp, knots, 3, 1000);
+
+std::vector<float> weights = {1.0f, 11.0f, 1.0f, 1.0f, 1.0f};
+Bspline *bspline = new Bspline(bsp, knots, 3, 1000, weights);
 
 // Camera
 Camera *camera = new Camera(HMM_V3(0, 0, 0), 25.0f, 45.0f, 30.0f);
