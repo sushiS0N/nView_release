@@ -73,7 +73,7 @@ HMM_Mat4 Camera::get_view_matrix() const
 void Camera::reset()
 {
     target = HMM_V3(0, 0, 0);
-    distance = 2.0f;
+    distance = 20.0f;
     yaw = 45.0f;
     pitch = 30.0f;
 }

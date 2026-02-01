@@ -2,7 +2,6 @@
 #include "HandmadeMath.h"
 
 #define SOKOL_IMPL
-//#define SOKOL_D3D11
 #define SOKOL_GLCORE
 
 #include "sokol_app.h"
@@ -17,7 +16,43 @@
 #include "bezier_patch.h"
 #include "camera.h"
 #include "gizmo.h"
-#include "bspline.h"
+#include "nurbs.h"
+
+// 4x4 control point grid (bicubic surface)
+std::vector<float> srf_cp = {
+    // Row 0 (j=0)
+    0.0f, 0.0f, 0.0f,    2.0f, 0.0f, 1.0f,    4.0f, 0.0f, 1.0f,    6.0f, 0.0f, 0.0f,
+    // Row 1 (j=1)
+    0.0f, 2.0f, 1.0f,    2.0f, 2.0f, 3.0f,    4.0f, 2.0f, 3.0f,    6.0f, 2.0f, 1.0f,
+    // Row 2 (j=2)
+    0.0f, 4.0f, 1.0f,    2.0f, 4.0f, 3.0f,    4.0f, 4.0f, 3.0f,    6.0f, 4.0f, 1.0f,
+    // Row 3 (j=3)
+    0.0f, 6.0f, 0.0f,    2.0f, 6.0f, 1.0f,    4.0f, 6.0f, 1.0f,    6.0f, 6.0f, 0.0f
+};
+
+// Uniform knot vectors for bicubic (degree 3)
+std::vector<float> u_knots = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+std::vector<float> v_knots = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+
+// All weights = 1.0 (makes it a B-spline surface for easier initial testing)
+std::vector<float> srf_weights = {
+    1.0f, 1.0f, 1.0f, 1.0f,
+    1.0f, 21.0f, 1.0f, 1.0f,
+    1.0f, 1.0f, 1.0f, 1.0f,
+    1.0f, 1.0f, 1.0f, 1.0f
+};
+
+NURBS_surface* surface = new NURBS_surface(
+    srf_cp,
+    u_knots,
+    v_knots,
+    3,        // degree
+    4,        // u_num_pts
+    4,        // v_num_pts
+    20,       // resolution
+    srf_weights
+);
+
 
 //Geometry
 float cp[48] = {
@@ -51,8 +86,8 @@ std::vector<float> bsp={
 };
 std::vector<float> knots = {0.0f,0.0f,0.0f,0.0f,0.5f,1.0f,1.0f,1.0f,1.0f};
 
-std::vector<float> weights = {1.0f, 11.0f, 1.0f, 1.0f, 1.0f};
-Bspline *bspline = new Bspline(bsp, knots, 3, 1000, weights);
+std::vector<float> bsp_weights = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+NURBS_spline *bspline = new NURBS_spline(bsp, knots, 3, 1000, bsp_weights);
 
 // Camera
 Camera *camera = new Camera(HMM_V3(0, 0, 0), 25.0f, 45.0f, 30.0f);
@@ -105,17 +140,8 @@ void frame()
     sg_apply_pipeline(state.pip_pts);
     bspline->render_control_points(mvp);
 
-    /*
-    // Draw bezier patch
-    sg_apply_pipeline(state.pip_pts);
     sg_apply_pipeline(state.pip_triangles);
-    sg_apply_uniforms(0, SG_RANGE_REF(mvp));
-    patch->render();
-    */
-
-    // Draw Bspline
-    //sg_apply_pipeline(state.pip_lines);
-    //sg_apply_pipeline(state.pip_pts);    
+    surface->render_surface(mvp);
     
     sg_end_pass();
     sg_commit();
@@ -147,6 +173,7 @@ void init()
     gizmo = new Gizmo();
     patch->generate_mesh();
     bspline->generate_bspline();
+    surface->generate_mesh();
 
     // Create shader
     sg_shader shd = sg_make_shader(shd_shader_desc(sg_query_backend()));
