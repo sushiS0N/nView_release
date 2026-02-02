@@ -59,7 +59,7 @@ int find_span(float u, int n, int p, std::vector<float> knot_vector)
 
 void compute_basis_funs(float u, int i, int p, std::vector<float> &basis_funs, std::vector<float> &knot_vector)
 {
-    basis_funs.resize(p + 1, 0.0f); // how is this passed and processed in memory good moemtn to learn!
+    basis_funs.resize(p + 1, 0.0f); 
     basis_funs[0] = 1.0;
     std::vector<float> right(p + 1, 0.0f), left(p + 1, 0.0f);
     for (int j = 1; j <= p; j++)
@@ -138,6 +138,9 @@ void NURBS_spline::curve_point(float u, float *out_pos)
         cw[2] += basis_funs[i] * weighted_points[cp_idx + 2];
         cw[3] += basis_funs[i] * weighted_points[cp_idx + 3];
     }    
+    out_pos[0] = cw[0]/cw[3];
+    out_pos[1] = cw[1]/cw[3];
+    out_pos[2] = cw[2]/cw[3];
 }
 
 void NURBS_spline::generate_bspline()
@@ -194,7 +197,7 @@ void NURBS_spline::render_spline(const HMM_Mat4 &mvp)
     // Struct for shader
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 10.0f;
+    params.point_size = 1.0f;
 
     sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, this->num_pts + 1, 1);
@@ -382,19 +385,6 @@ void NURBS_surface::generate_mesh()
     mesh_bind = {};
     mesh_bind.vertex_buffers[0] = mesh_vtx_buf;
     mesh_bind.index_buffer = mesh_idx_buf;
-/*
-    // Color the points
-    std::vector<float> color_cp = std::move(colour_points(control_points,1.0f, 0.0f, 1.0f, 1.0f));
-
-    // Create control point buffer
-    sg_buffer_desc crv_pt_buf_desc = {};
-    crv_pt_buf_desc.data = sg_range{color_cp.data(), color_cp.size() * sizeof(float)};
-    crv_pt_buf_desc.label = "bspline_cp_buffer";
-    control_pts_buf = sg_make_buffer(crv_pt_buf_desc);
-
-    cp_bind = {};
-    cp_bind.vertex_buffers[0] = this->control_pts_buf;
-    */
 }
 
 void NURBS_surface::render_surface(const HMM_Mat4 &mvp)

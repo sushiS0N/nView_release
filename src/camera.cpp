@@ -86,13 +86,13 @@ void Camera::handle_events(const sapp_event *ev)
         zoom(ev->scroll_y * -0.5f);
         break;
     case SAPP_EVENTTYPE_MOUSE_DOWN:
-        if (ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
+        if (ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
         {
             sapp_lock_mouse(true);
         }
         break;
     case SAPP_EVENTTYPE_MOUSE_UP:
-        if (ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
+        if (ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
         {
             sapp_lock_mouse(false);
         }
