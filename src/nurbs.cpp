@@ -80,8 +80,8 @@ void compute_basis_funs(float u, int i, int p, std::vector<float> &basis_funs, s
     }
 }
 
-//////////////////////////////////
-///// NURBS Spline functions /////
+////////////////////////
+///// NURBS Spline /////
 
 NURBS_spline::NURBS_spline(std::vector<float> cp, std::vector<float> knots, int degree, int resolution, std::vector<float> weights_in)
 {
@@ -117,6 +117,47 @@ NURBS_spline::NURBS_spline(std::vector<float> cp, std::vector<float> knots, int 
     p = degree;
 
     num_pts = resolution;
+    printf("numpts * 3 * size of float =%f ", num_pts * 3 * sizeof(float));
+    printf("cpts * 3 * size of float =%f ", control_points.size() * sizeof(float));
+    // Create empty dynamic buffers
+    sg_buffer_desc crv_buf_desc = {};
+    crv_buf_desc.size = (num_pts+1) * 7 * sizeof(float);
+    crv_buf_desc.usage.dynamic_update = true;    
+    crv_buf_desc.label = "bspline_buffer";
+    crv_vtx_buf = sg_make_buffer(crv_buf_desc);
+
+    crv_bind = {};
+    crv_bind.vertex_buffers[0] = this->crv_vtx_buf;
+
+    // Create control point buffer
+    sg_buffer_desc crv_pt_buf_desc = {};
+    crv_pt_buf_desc.size = control_points.size()/3 * 7 * sizeof(float);
+    crv_pt_buf_desc.usage.dynamic_update = true;
+    crv_pt_buf_desc.label = "bspline_cp_buffer";
+    control_pts_buf = sg_make_buffer(crv_pt_buf_desc);
+
+    cp_bind = {};
+    cp_bind.vertex_buffers[0] = this->control_pts_buf;
+}
+
+void NURBS_spline::update_cp(int index, HMM_Vec3 new_pos)
+{
+    int cp_idx = index *3;
+    int wp_idx = index * 4;
+
+    // Update control point
+    control_points[cp_idx] = new_pos.X;
+    control_points[cp_idx+1] = new_pos.Y;
+    control_points[cp_idx+2] = new_pos.Z;
+
+    // Update weights
+    weighted_points[wp_idx] = control_points[cp_idx]*weights[index];
+    weighted_points[wp_idx+1] = control_points[cp_idx+1]*weights[index];
+    weighted_points[wp_idx+2] = control_points[cp_idx+2]*weights[index];
+    weighted_points[wp_idx+3] = weights[index];
+
+    // Regenerate curve geo
+    generate();
 }
 
 void NURBS_spline::curve_point(float u, float *out_pos)
@@ -143,9 +184,8 @@ void NURBS_spline::curve_point(float u, float *out_pos)
     out_pos[2] = cw[2]/cw[3];
 }
 
-void NURBS_spline::generate_bspline()
+void NURBS_spline::generate()
 {
-    std::vector<float> crv_pts;
     crv_pts.resize((num_pts + 1) * 7, 0.0f);
 
     int idx = 0;
@@ -168,26 +208,13 @@ void NURBS_spline::generate_bspline()
         crv_pts[idx + 6] = 1.0f;
     }
 
-    // Create curve points buffer
-    sg_buffer_desc crv_buf_desc = {};
-    crv_buf_desc.data = sg_range{crv_pts.data(), crv_pts.size() * sizeof(float)};
-    crv_buf_desc.label = "bspline_buffer";
-    crv_vtx_buf = sg_make_buffer(crv_buf_desc);
+    color_cp = colour_points(control_points, 0.5f,0.2f,0.9f,1.0f);
+}
 
-    crv_bind = {};
-    crv_bind.vertex_buffers[0] = this->crv_vtx_buf;
-
-    // Color the points
-    std::vector<float> color_cp = std::move(colour_points(control_points,1.0f, 0.0f, 1.0f, 1.0f));
-
-    // Create control point buffer
-    sg_buffer_desc crv_pt_buf_desc = {};
-    crv_pt_buf_desc.data = sg_range{color_cp.data(), color_cp.size() * sizeof(float)};
-    crv_pt_buf_desc.label = "bspline_cp_buffer";
-    control_pts_buf = sg_make_buffer(crv_pt_buf_desc);
-
-    cp_bind = {};
-    cp_bind.vertex_buffers[0] = this->control_pts_buf;
+void NURBS_spline::update_buffer()
+{
+    sg_update_buffer(crv_vtx_buf, sg_range{crv_pts.data(), crv_pts.size() * sizeof(float)});    
+    sg_update_buffer(control_pts_buf, sg_range{color_cp.data(), color_cp.size() * sizeof(float)});    
 }
 
 void NURBS_spline::render_spline(const HMM_Mat4 &mvp)

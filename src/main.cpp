@@ -23,6 +23,7 @@
 // Resolution macros
 #define RESOLUTION_X 640.0f
 #define RESOLUTION_Y 480.0f 
+#define FOV 60.0f * (HMM_PI / 180.0f)
 
 // GEOMETRY
 // NURBS - surface
@@ -73,7 +74,7 @@ std::vector<float> bsp={
 std::vector<float> bsp_knots = {0.0f,0.0f,0.0f,0.0f,0.5f,1.0f,1.0f,1.0f,1.0f};
 std::vector<float> bsp_weights = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
 
-NURBS_spline *bspline = new NURBS_spline(bsp, bsp_knots, 3, 1000, bsp_weights);
+NURBS_spline *bspline;
 
 // Camera
 Camera *camera = new Camera(HMM_V3(0, 0, 0), 25.0f, 45.0f, 30.0f);
@@ -91,17 +92,86 @@ static struct
     sg_pipeline pip_pts;
     sg_bindings bind;
     sg_pass_action pass_action;
+
+    // View matrices
+    HMM_Mat4 current_mvp;
+    HMM_Mat4 current_proj;
+    HMM_Mat4 current_view;
+
+    // Buffer update flag
+    bool buf_update_flag;
 } state;
 
 // Mouse interaction struct and utility functions
 static struct
 {
     bool dragging = false;
-    int selected_cp_index = -1;
+    int selected_cp_index = 0;
     HMM_Vec3 drag_plane_normal;
     float mouse_x, mouse_y, ndc_x, ndc_y;
     HMM_Vec3 ray;
-} interaction_struct;
+} interaction;
+
+int closest_cp(std::vector<float> &points, HMM_Mat4 mvp)
+{
+    int pt_idx = 0;
+    float min_dist = RESOLUTION_X * 2;
+    int closest_idx = 0;
+
+    for (int i = 0; i < points.size()/3; i++)
+    {
+        pt_idx = i *3;
+        HMM_Vec3 world_pt = HMM_V3(points[pt_idx], points[pt_idx + 1], points[pt_idx + 2]);
+        HMM_Vec4 world_pos = HMM_V4(world_pt.X, world_pt.Y, world_pt.Z, 1.0f);
+        HMM_Vec4 clip_pos = HMM_MulM4V4(mvp, world_pos);
+
+        // Project to 3D
+        HMM_Vec3 ndc = HMM_V3(clip_pos.X / clip_pos.W, clip_pos.Y / clip_pos.W, clip_pos.Z / clip_pos.W);
+
+        // NDC to screen
+        float screen_x = (ndc.X + 1.0f) * RESOLUTION_X / 2.0f;
+        float screen_y = (1.0f - ndc.Y) * RESOLUTION_Y / 2.0f;
+
+        float pixel_dist = std::sqrt((screen_x - interaction.mouse_x)*(screen_x - interaction.mouse_x) + (screen_y-interaction.mouse_y)*(screen_y-interaction.mouse_y));
+
+        if(pixel_dist<min_dist)
+        {
+            min_dist = pixel_dist;
+            closest_idx = i;
+        }        
+    }
+    return closest_idx;
+}
+
+float dist_pt_ln(HMM_Vec3 point, HMM_Vec3 origin, HMM_Vec3 dir)
+{
+    printf("  Testing CP at (%.2f, %.2f, %.2f) against ray from (%.2f, %.2f, %.2f) dir (%.2f, %.2f, %.2f)\n",
+           point.X, point.Y, point.Z, origin.X, origin.Y, origin.Z, dir.X, dir.Y, dir.Z);
+        
+    HMM_Vec3 a = HMM_Cross(HMM_SubV3(point, origin), dir);
+    float dist = std::sqrt(HMM_Dot(a, a) / HMM_Dot(dir, dir));
+    printf("    Distance: %.2f\n", dist);
+    return dist;
+}
+
+HMM_Vec3 line_plane_int(HMM_Vec3 cam_pos, HMM_Vec3 dir)
+{
+    HMM_Vec3 int_pt = HMM_V3(0.0f, 0.0f, 0.0f);
+    HMM_Vec3 normal = HMM_V3(0.0f, 1.0f, 0.0f); // XZ plane
+
+    float denom = HMM_DotV3(normal, dir);
+    //printf("Before intersection %.2f, %.2f, %.2f\n", int_pt.X, int_pt.Y, int_pt.Z);
+    if (std::abs(denom) > 1e-6)
+    {
+        float t = -cam_pos.Y / denom; // plane_origin.y = 0
+        if (t >= 0)
+        {
+            int_pt = HMM_AddV3(cam_pos, HMM_MulV3F(dir, t));
+        }
+        //printf("After intersection %.2f, %.2f, %.2f\n", int_pt.X, int_pt.Y, int_pt.Z);
+    }
+    return int_pt;
+}
 
 HMM_Vec3 unproject_point(float ndc_x, float ndc_y, float ndc_z, HMM_Mat4 proj, HMM_Mat4 view)
 {
@@ -128,60 +198,51 @@ HMM_Vec3 screen_to_ray(float ndc_x, float ndc_y, HMM_Mat4 proj, HMM_Mat4 view)
 
     HMM_Vec3 ray_dir = HMM_SubV3(far_pt, near_pt);
 
-    printf("Near point: %.2f, %.2f, %.2f\n", near_pt.X, near_pt.Y, near_pt.Z);
-    printf("Far point: %.2f, %.2f, %.2f\n", far_pt.X, far_pt.Y, far_pt.Z);
+    // printf("Near point: %.2f, %.2f, %.2f\n", near_pt.X, near_pt.Y, near_pt.Z);
+    // printf("Far point: %.2f, %.2f, %.2f\n", far_pt.X, far_pt.Y, far_pt.Z);
 
     return HMM_NormV3(ray_dir);
 }
 
-float dist_pt_ln(HMM_Vec3 point, HMM_Vec3 origin, HMM_Vec3 dir)
+void move_pt(int cp_idx, HMM_Vec3 ray_dir, HMM_Vec3 camera_pos)
 {
-    printf("  Testing CP at (%.2f, %.2f, %.2f) against ray from (%.2f, %.2f, %.2f) dir (%.2f, %.2f, %.2f)\n",
-           point.X, point.Y, point.Z, origin.X, origin.Y, origin.Z, dir.X, dir.Y, dir.Z);
-        
-    HMM_Vec3 a = HMM_Cross(HMM_SubV3(point, origin), dir);
-    float dist = std::sqrt(HMM_Dot(a, a) / HMM_Dot(dir, dir));
-    printf("    Distance: %.2f\n", dist);
-    return dist;
+    //printf("Before move cp: %.2f, %.2f, %.2f\n", bsp[cp_idx*3], bsp[cp_idx*3+1], bsp[cp_idx*3+2]);
+
+    HMM_Vec3 pos_XZ = line_plane_int(camera_pos, ray_dir);
+    bsp[cp_idx*3] = pos_XZ.X;
+    bsp[cp_idx*3+1] = pos_XZ.Y;
+    bsp[cp_idx*3+2] = pos_XZ.Z;
+    //printf("IntPT: %.2f, %.2f, %.2f\n", pos_XZ.X, pos_XZ.Y, pos_XZ.Z);
+
+    //printf("After move cp: %.2f, %.2f, %.2f\n", bsp[cp_idx*3], bsp[cp_idx*3+1], bsp[cp_idx*3+2]);
+    bspline->update_cp(cp_idx, pos_XZ);
 }
-
-int find_closest_cp(HMM_Vec3 camera_position, HMM_Vec3 ray_dir)
-{
-    float min_dist = 1e7f;
-    int closest_idx = 0;
-    int cp_idx = 0;
-
-    for (int i = 0; i < bsp.size() / 3; i++)
-    {
-        cp_idx = i * 3;
-        HMM_Vec3 cp = HMM_V3(bsp[cp_idx], bsp[cp_idx + 1], bsp[cp_idx + 2]);
-        float cp_dist = dist_pt_ln(cp, camera_position, ray_dir);
-        if (cp_dist < min_dist)
-        {
-            closest_idx = i;
-            min_dist = cp_dist;
-        }
-    }
-    return closest_idx;
-}
-
-void update_cp(int index, HMM_Vec3 new_pos);
 
 // Loggin functions
-void print_mouse_pos(const sapp_event *ev)
+void update_mouse_pos(const sapp_event *ev)
 {
     // Screen coordinates
     float mouse_x = ev->mouse_x;
     float mouse_y = ev->mouse_y;
 
+    // if(interaction.dragging)
+    // {
+    //     mouse_x += ev->mouse_dx * 0.25f;
+    //     mouse_y += ev->mouse_dy * 0.25f;
+    // }
+
     // Convert to NDC
     float ndc_x = (2.0f * mouse_x / sapp_widthf()) - 1.0f;
     float ndc_y = 1.0f - (2.0f * mouse_y / sapp_heightf());
 
-    interaction_struct.mouse_x = mouse_x;
-    interaction_struct.mouse_y = mouse_x;   
-    interaction_struct.ndc_x = ndc_x;   
-    interaction_struct.ndc_y = ndc_x; 
+    // Calcualte ray
+    interaction.ray = screen_to_ray(ndc_x, ndc_y, state.current_proj, state.current_view);
+
+    // Stoe mouse screen and ndc coordinates
+    interaction.mouse_x = mouse_x;
+    interaction.mouse_y = mouse_y;   
+    interaction.ndc_x = ndc_x;   
+    interaction.ndc_y = ndc_y; 
 }
 
 static void print_status_text(float disp_w, float disp_h)
@@ -199,28 +260,32 @@ void frame()
     pass.swapchain = sglue_swapchain();
 
     // Calculate MVP matix
-    float fov_rad = 60.0f* (HMM_PI / 180.0f);
-    HMM_Mat4 proj = HMM_Perspective_RH_NO(fov_rad, RESOLUTION_X / RESOLUTION_Y, 0.01f, 100.0f);
+    HMM_Mat4 proj = HMM_Perspective_RH_NO(FOV, RESOLUTION_X / RESOLUTION_Y, 0.01f, 100.0f);
     HMM_Mat4 view = camera->get_view_matrix();
     HMM_Mat4 model = HMM_M4D(1.0f);
     HMM_Mat4 mvp = HMM_MulM4(proj, HMM_MulM4(view, model));
 
-    HMM_Vec3 cam_pos = camera->calculate_position();
-        printf("Camera pos: %.2f, %.2f, %.2f\n", cam_pos.X, cam_pos.Y, cam_pos.Z);
+    // Save state
+    state.current_mvp = mvp;
+    state.current_proj = proj;
+    state.current_view = view;
+
+    // HMM_Vec3 cam_pos = camera->calculate_position();
+    //     printf("Camera pos: %.2f, %.2f, %.2f\n", cam_pos.X, cam_pos.Y, cam_pos.Z);
 
     // Debugger text
-    const float w = sapp_widthf();
-    const float h = sapp_heightf();
     print_status_text(sapp_widthf(), sapp_heightf());
-    sdtx_printf("Window x: %.2f, Window: y: %.2f\n", interaction_struct.mouse_x, interaction_struct.mouse_y);
-    sdtx_printf("NDC_x: %.2f, NDC_y: y: %.2f\n", interaction_struct.ndc_x, interaction_struct.ndc_y);
-
-    interaction_struct.ray = screen_to_ray(interaction_struct.ndc_x, interaction_struct.ndc_y, proj, view);
-    sdtx_printf("Ray XYZ: %.2f, %.2f, %.2f\n", interaction_struct.ray.X, interaction_struct.ray.Y, interaction_struct.ray.Z);
+    sdtx_printf("Window x: %.2f, y: %.2f\n", interaction.mouse_x, interaction.mouse_y);
+    sdtx_printf("NDC x: %.2f, y: %.2f\n", interaction.ndc_x, interaction.ndc_y);
     
-    int closest_pt = find_closest_cp(cam_pos, interaction_struct.ray);
-    sdtx_printf("Closest cp is: %i, xyz: %.2f, %.2f, %.2f,", closest_pt, bsp[closest_pt*3],bsp[closest_pt*3+1],bsp[closest_pt*3+2]);
+    int cp_idx = interaction.selected_cp_index;
+    sdtx_printf("Closest cp is: %i, xyz: %.2f, %.2f, %.2f\n", cp_idx, bsp[cp_idx*3],bsp[cp_idx*3+1],bsp[cp_idx*3+2]);
 
+    if(state.buf_update_flag)
+    {
+        bspline->update_buffer();
+        state.buf_update_flag = false;
+    }
 
     sg_begin_pass(pass);
 
@@ -257,21 +322,51 @@ void event(const sapp_event *ev)
         if (ev->key_code == SAPP_KEYCODE_ESCAPE)
         {
             sapp_quit();
-        } break;
-    }
-
-    // Camera handler in camera.cpp
-    camera->handle_events(ev);
-
-    // Mouse picking
-    switch(ev->type)
-    {
-        case SAPP_EVENTTYPE_MOUSE_DOWN:
-        if(ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
+        }
+        else if (ev->key_code == SAPP_KEYCODE_F)
         {
-            print_mouse_pos(ev);
-        } break;
+            camera->reset();
+        } 
+        break;
 
+    case SAPP_EVENTTYPE_MOUSE_DOWN:
+        if (ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
+        {
+            interaction.dragging = true;
+
+            update_mouse_pos(ev);
+            interaction.selected_cp_index = closest_cp(bspline->control_points, state.current_mvp);
+        }
+        else if (ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
+        {
+            sapp_lock_mouse(true);
+            camera->handle_events(ev);
+        }
+        break;
+
+    case SAPP_EVENTTYPE_MOUSE_UP:
+        if (ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
+        {
+            interaction.dragging = false;
+        }
+        else if (ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
+        {
+            sapp_lock_mouse(false);
+        }
+        break;
+
+    case SAPP_EVENTTYPE_MOUSE_MOVE:
+        if (interaction.dragging)
+        {
+            state.buf_update_flag = true;
+            update_mouse_pos(ev);
+            move_pt(interaction.selected_cp_index, interaction.ray, camera->calculate_position());          
+        }
+        else if(sapp_mouse_locked())
+        {
+            camera->handle_events(ev);
+        }
+        break;
     }
 }
 
@@ -285,14 +380,18 @@ void init()
 
     // Setup sokol-debugtext
     sdtx_desc_t sdtx_desc = {};
-    sdtx_desc.fonts[0] = sdtx_font_z1013();
+    sdtx_desc.fonts[0] = sdtx_font_oric();
     sdtx_desc.logger.func = slog_func;
     sdtx_setup(sdtx_desc);  
 
+    
     // Initialize geometry
     gizmo = new Gizmo();
-    //patch->generate_mesh();
-    bspline->generate_bspline();
+
+    // NURBS spline
+    bspline = new NURBS_spline(bsp, bsp_knots, 3, 1000, bsp_weights);
+    bspline->generate();
+    state.buf_update_flag = true;
     //surface->generate_mesh();
 
     // Create shader
