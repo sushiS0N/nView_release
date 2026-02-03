@@ -210,7 +210,7 @@ void NURBS_spline::render_control_points(const HMM_Mat4 &mvp)
     // Struct for shader
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 10.0f;
+    params.point_size = 4.0f;
 
     sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, n + 1, 1);

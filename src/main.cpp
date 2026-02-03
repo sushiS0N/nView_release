@@ -12,6 +12,7 @@
 
 #include "stdio.h"
 #include <vector>
+#include <cmath>
 
 #include "shader.h"
 #include "bezier_patch.h"
@@ -46,16 +47,7 @@ std::vector<float> srf_weights = {
     1.0f, 1.0f, 1.0f, 1.0f
 };
 
-NURBS_surface* surface = new NURBS_surface(
-    srf_cp,
-    u_knots,
-    v_knots,
-    3,        // degree
-    4,        // u_num_pts
-    4,        // v_num_pts
-    20,       // resolution
-    srf_weights
-);
+NURBS_surface* surface = new NURBS_surface(srf_cp, u_knots, v_knots, 3, 4, 4, 20, srf_weights);
 
 // Bezier patch
 float bez_cp[48] = {
@@ -108,12 +100,72 @@ static struct
     int selected_cp_index = -1;
     HMM_Vec3 drag_plane_normal;
     float mouse_x, mouse_y, ndc_x, ndc_y;
+    HMM_Vec3 ray;
 } interaction_struct;
 
-HMM_Vec3 screen_to_ray(float mouse_x, float mouse_y);
-int find_closest_cp(HMM_Vec3 ray_origin, HMM_Vec3 ray_dir);
-void update_cp(int index, HMM_Vec3 new_pos);
+HMM_Vec3 unproject_point(float ndc_x, float ndc_y, float ndc_z, HMM_Mat4 proj, HMM_Mat4 view)
+{
+    HMM_Vec4 clip_pos = HMM_V4(ndc_x,ndc_y,ndc_z, 1.0f);
 
+    // Inverse perspective projection
+    HMM_Mat4 inv_proj = HMM_InvGeneralM4(proj);
+    HMM_Vec4 view_pos = HMM_MulM4V4(inv_proj, clip_pos);
+
+    // Perspective divide
+    view_pos = HMM_DivV4F(view_pos, view_pos.W);
+
+    // World space
+    HMM_Mat4 inv_view = HMM_InvGeneralM4(view);
+    HMM_Vec4 world_pos = HMM_MulM4V4(inv_view, view_pos);
+
+    return HMM_V3(world_pos.X,world_pos.Y,world_pos.Z);
+}
+
+HMM_Vec3 screen_to_ray(float ndc_x, float ndc_y, HMM_Mat4 proj, HMM_Mat4 view)
+{
+    HMM_Vec3 near_pt = unproject_point(ndc_x,ndc_y, -1.0f, proj, view);
+    HMM_Vec3 far_pt = unproject_point(ndc_x,ndc_y, 1.0f, proj, view);
+
+    HMM_Vec3 ray_dir = HMM_SubV3(far_pt, near_pt);
+
+    printf("Near point: %.2f, %.2f, %.2f\n", near_pt.X, near_pt.Y, near_pt.Z);
+    printf("Far point: %.2f, %.2f, %.2f\n", far_pt.X, far_pt.Y, far_pt.Z);
+
+    return HMM_NormV3(ray_dir);
+}
+
+float dist_pt_ln(HMM_Vec3 point, HMM_Vec3 origin, HMM_Vec3 dir)
+{
+    printf("  Testing CP at (%.2f, %.2f, %.2f) against ray from (%.2f, %.2f, %.2f) dir (%.2f, %.2f, %.2f)\n",
+           point.X, point.Y, point.Z, origin.X, origin.Y, origin.Z, dir.X, dir.Y, dir.Z);
+        
+    HMM_Vec3 a = HMM_Cross(HMM_SubV3(point, origin), dir);
+    float dist = std::sqrt(HMM_Dot(a, a) / HMM_Dot(dir, dir));
+    printf("    Distance: %.2f\n", dist);
+    return dist;
+}
+
+int find_closest_cp(HMM_Vec3 camera_position, HMM_Vec3 ray_dir)
+{
+    float min_dist = 1e7f;
+    int closest_idx = 0;
+    int cp_idx = 0;
+
+    for (int i = 0; i < bsp.size() / 3; i++)
+    {
+        cp_idx = i * 3;
+        HMM_Vec3 cp = HMM_V3(bsp[cp_idx], bsp[cp_idx + 1], bsp[cp_idx + 2]);
+        float cp_dist = dist_pt_ln(cp, camera_position, ray_dir);
+        if (cp_dist < min_dist)
+        {
+            closest_idx = i;
+            min_dist = cp_dist;
+        }
+    }
+    return closest_idx;
+}
+
+void update_cp(int index, HMM_Vec3 new_pos);
 
 // Loggin functions
 void print_mouse_pos(const sapp_event *ev)
@@ -129,7 +181,7 @@ void print_mouse_pos(const sapp_event *ev)
     interaction_struct.mouse_x = mouse_x;
     interaction_struct.mouse_y = mouse_x;   
     interaction_struct.ndc_x = ndc_x;   
-    interaction_struct.ndc_y = ndc_x;   
+    interaction_struct.ndc_y = ndc_x; 
 }
 
 static void print_status_text(float disp_w, float disp_h)
@@ -146,13 +198,6 @@ void frame()
     pass.action = state.pass_action;
     pass.swapchain = sglue_swapchain();
 
-    // Debugger text
-    const float w = sapp_widthf();
-    const float h = sapp_heightf();
-    print_status_text(sapp_widthf(), sapp_heightf());
-    sdtx_printf("Mouse x: %.2f, Mouse: y: %.2f\n", interaction_struct.mouse_x, interaction_struct.mouse_y);
-    sdtx_printf("NDC_x: %.2f, NDC_y: y: %.2f", interaction_struct.ndc_x, interaction_struct.ndc_y);
-
     // Calculate MVP matix
     float fov_rad = 60.0f* (HMM_PI / 180.0f);
     HMM_Mat4 proj = HMM_Perspective_RH_NO(fov_rad, RESOLUTION_X / RESOLUTION_Y, 0.01f, 100.0f);
@@ -161,6 +206,21 @@ void frame()
     HMM_Mat4 mvp = HMM_MulM4(proj, HMM_MulM4(view, model));
 
     HMM_Vec3 cam_pos = camera->calculate_position();
+        printf("Camera pos: %.2f, %.2f, %.2f\n", cam_pos.X, cam_pos.Y, cam_pos.Z);
+
+    // Debugger text
+    const float w = sapp_widthf();
+    const float h = sapp_heightf();
+    print_status_text(sapp_widthf(), sapp_heightf());
+    sdtx_printf("Window x: %.2f, Window: y: %.2f\n", interaction_struct.mouse_x, interaction_struct.mouse_y);
+    sdtx_printf("NDC_x: %.2f, NDC_y: y: %.2f\n", interaction_struct.ndc_x, interaction_struct.ndc_y);
+
+    interaction_struct.ray = screen_to_ray(interaction_struct.ndc_x, interaction_struct.ndc_y, proj, view);
+    sdtx_printf("Ray XYZ: %.2f, %.2f, %.2f\n", interaction_struct.ray.X, interaction_struct.ray.Y, interaction_struct.ray.Z);
+    
+    int closest_pt = find_closest_cp(cam_pos, interaction_struct.ray);
+    sdtx_printf("Closest cp is: %i, xyz: %.2f, %.2f, %.2f,", closest_pt, bsp[closest_pt*3],bsp[closest_pt*3+1],bsp[closest_pt*3+2]);
+
 
     sg_begin_pass(pass);
 
