@@ -19,9 +19,12 @@
 #include "camera.h"
 #include "gizmo.h"
 #include "nurbs.h"
-
-// Resolution macros
-#define RESOLUTION_X 640.0f
+//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// REPLACE WITH sapp.width and height for scalability!!!!!!!
+// + ADD PAN + live weight edit  + basis funcitonHIGHLIGHT!!
+//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+// Resolution macros        
+#define RESOLUTION_X 640.0f 
 #define RESOLUTION_Y 480.0f 
 #define FOV 60.0f * (HMM_PI / 180.0f)
 
@@ -69,10 +72,11 @@ std::vector<float> bsp={
     6.0f, 0.0f, 0.0f, // P1 
     8.0f, 0.0f, 6.0f, // P2
     0.0f, 0.0f, 4.0f, // P3
-    2.0f, 0.0f, 2.0f  // P4
+    2.0f, 0.0f, 2.0f,  // P4
+    3.0f, 0.0f, 4.0f  // P5
 };
-std::vector<float> bsp_knots = {0.0f,0.0f,0.0f,0.0f,0.5f,1.0f,1.0f,1.0f,1.0f};
-std::vector<float> bsp_weights = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+std::vector<float> bsp_knots = {0.0f,0.0f,0.0f,0.0f,0.5f, 0.8f,1.0f,1.0f,1.0f,1.0f};
+std::vector<float> bsp_weights = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
 
 NURBS_spline *bspline;
 
@@ -106,6 +110,7 @@ static struct
 static struct
 {
     bool dragging = false;
+
     int selected_cp_index = 0;
     HMM_Vec3 drag_plane_normal;
     float mouse_x, mouse_y, ndc_x, ndc_y;
@@ -305,6 +310,13 @@ void frame()
     sg_apply_pipeline(state.pip_pts);
     bspline->render_control_points(mvp);
 
+    // Draw bspline markers
+    if (bspline->show_knots)
+    {
+        sg_apply_pipeline(state.pip_pts);
+        bspline->render_knots(mvp);
+    }
+
     // sg_apply_pipeline(state.pip_triangles);
     // surface->render_surface(mvp);
     
@@ -326,6 +338,16 @@ void event(const sapp_event *ev)
         else if (ev->key_code == SAPP_KEYCODE_F)
         {
             camera->reset();
+        } 
+        else if (ev->key_code == SAPP_KEYCODE_K)
+        {
+            if(bspline->show_knots) bspline->show_knots = false;
+            else bspline->show_knots = true;
+        } 
+        else if (ev->key_code == SAPP_KEYCODE_I)
+        {
+            if(bspline->show_influence) bspline->show_influence = false;
+            else bspline->show_influence = true;
         } 
         break;
 
@@ -367,6 +389,10 @@ void event(const sapp_event *ev)
             camera->handle_events(ev);
         }
         break;
+    case SAPP_EVENTTYPE_MOUSE_SCROLL:
+        camera->handle_events(ev);
+        break;
+
     }
 }
 
@@ -390,7 +416,7 @@ void init()
 
     // NURBS spline
     bspline = new NURBS_spline(bsp, bsp_knots, 3, 1000, bsp_weights);
-    bspline->generate();
+    bspline->generate(0);
     state.buf_update_flag = true;
     //surface->generate_mesh();
 

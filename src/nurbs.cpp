@@ -1,4 +1,6 @@
 #include "sokol_gfx.h"
+#define SOKOL_COLOR_IMPL
+#include "sokol_color.h"
 #include "shader.h"
 
 #include "stdio.h"
@@ -115,10 +117,10 @@ NURBS_spline::NURBS_spline(std::vector<float> cp, std::vector<float> knots, int 
 
     n = control_points.size() / 3 - 1;
     p = degree;
-
     num_pts = resolution;
-    printf("numpts * 3 * size of float =%f ", num_pts * 3 * sizeof(float));
-    printf("cpts * 3 * size of float =%f ", control_points.size() * sizeof(float));
+    show_influence = false;
+    show_knots = false;
+
     // Create empty dynamic buffers
     sg_buffer_desc crv_buf_desc = {};
     crv_buf_desc.size = (num_pts+1) * 7 * sizeof(float);
@@ -138,6 +140,20 @@ NURBS_spline::NURBS_spline(std::vector<float> cp, std::vector<float> knots, int 
 
     cp_bind = {};
     cp_bind.vertex_buffers[0] = this->control_pts_buf;
+
+    printf("KNots: %i", knot_vector.size());
+    fflush(stdout); // This is the magic line
+    // Create control point buffer
+    sg_buffer_desc knot_buf_desc = {};
+    knot_buf_desc.size = knot_vector.size() * 7 * sizeof(float);
+    knot_buf_desc.usage.dynamic_update = true;
+    knot_buf_desc.label = "bspline_knot_buffer";
+    knots_buf = sg_make_buffer(knot_buf_desc);
+
+    knots_bind = {};
+    knots_bind.vertex_buffers[0] = this->knots_buf;
+
+    knots_markers.resize((knot_vector.size()-6) * 7, 0.0f);
 }
 
 void NURBS_spline::update_cp(int index, HMM_Vec3 new_pos)
@@ -157,13 +173,13 @@ void NURBS_spline::update_cp(int index, HMM_Vec3 new_pos)
     weighted_points[wp_idx+3] = weights[index];
 
     // Regenerate curve geo
-    generate();
+    generate(index);
 }
 
 void NURBS_spline::curve_point(float u, float *out_pos)
 {
-    int span = find_span(u, this->n, this->p, this->knot_vector);
-    compute_basis_funs(u, span, p, this->basis_funs, this->knot_vector);
+    int span = find_span(u, n, p, knot_vector);
+    compute_basis_funs(u, span, p, basis_funs, knot_vector);
     float cw[4] = {0.0f,0.0f,0.0f,0.0f};
 
     out_pos[0] = 0.0f;
@@ -184,14 +200,14 @@ void NURBS_spline::curve_point(float u, float *out_pos)
     out_pos[2] = cw[2]/cw[3];
 }
 
-void NURBS_spline::generate()
+void NURBS_spline::generate(int selected_idx)
 {
     crv_pts.resize((num_pts + 1) * 7, 0.0f);
-
     int idx = 0;
     for (int i = 0; i <= num_pts; i++)
     {
         idx = i * 7;
+        float influence = 0.0f;
 
         float u = (float)i / (float)num_pts;
         float out_pos[3];
@@ -201,11 +217,42 @@ void NURBS_spline::generate()
         crv_pts[idx + 1] = out_pos[1];
         crv_pts[idx + 2] = out_pos[2];
 
+        int span = find_span(u, n, p, knot_vector);
+        compute_basis_funs(u, span, p, basis_funs, knot_vector);    
+
+        if(selected_idx >= span-p && selected_idx <= span && show_influence)
+        {
+            int local_index = selected_idx - (span-p);
+            //influence = basis_funs[local_index];
+            influence = 1.0f;
+        }
+
+        sg_color clr = sg_color_lerp(sg_white_smoke, sg_red, influence);        
         // Point color
-        crv_pts[idx + 3] = 1.0f;
-        crv_pts[idx + 4] = 1.0f;
-        crv_pts[idx + 5] = 1.0f;
-        crv_pts[idx + 6] = 1.0f;
+        crv_pts[idx + 3] = clr.r;
+        crv_pts[idx + 4] = clr.g;
+        crv_pts[idx + 5] = clr.b;
+        crv_pts[idx + 6] = clr.a;
+    }
+
+    for(int i = p; i<=knot_vector.size()-1; i++)
+    {
+        float u = knot_vector[i];
+
+        if(i>p && knot_vector[i]==knot_vector[i-1]) continue;
+
+        float pos[3];
+        curve_point(u, pos);
+
+        idx = (i-p)*7;
+        knots_markers[idx] = pos[0];
+        knots_markers[idx+1] = pos[1];
+        knots_markers[idx+2] = pos[2];
+
+        knots_markers[idx+3] = sg_magenta.r;
+        knots_markers[idx+4] = sg_magenta.g;
+        knots_markers[idx+5] = sg_magenta.b;
+        knots_markers[idx+6] = sg_magenta.a;
     }
 
     color_cp = colour_points(control_points, 0.5f,0.2f,0.9f,1.0f);
@@ -213,8 +260,12 @@ void NURBS_spline::generate()
 
 void NURBS_spline::update_buffer()
 {
-    sg_update_buffer(crv_vtx_buf, sg_range{crv_pts.data(), crv_pts.size() * sizeof(float)});    
-    sg_update_buffer(control_pts_buf, sg_range{color_cp.data(), color_cp.size() * sizeof(float)});    
+    sg_update_buffer(crv_vtx_buf, sg_range{crv_pts.data(), crv_pts.size() * sizeof(float)});
+    sg_update_buffer(control_pts_buf, sg_range{color_cp.data(), color_cp.size() * sizeof(float)});
+    if (show_knots)
+    {
+        sg_update_buffer(knots_buf, sg_range{knots_markers.data(), knots_markers.size() * sizeof(float)});
+    }
 }
 
 void NURBS_spline::render_spline(const HMM_Mat4 &mvp)
@@ -237,12 +288,24 @@ void NURBS_spline::render_control_points(const HMM_Mat4 &mvp)
     // Struct for shader
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 4.0f;
+    params.point_size = 6.0f;
 
     sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, n + 1, 1);
 }
 
+void NURBS_spline::render_knots(const HMM_Mat4 &mvp)
+{
+    sg_apply_bindings(knots_bind);
+
+    // Struct for shader
+    vs_params_t params = {};
+    memcpy(params.mvp, &mvp, sizeof(float)*16);
+    params.point_size = 8.0f;
+
+    sg_apply_uniforms(0, SG_RANGE_REF(params));
+    sg_draw(0, knots_markers.size()/7, 1);
+}
 
 //////////////////////////////////
 ///// NURBS Surface functions /////
