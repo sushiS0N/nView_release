@@ -10,10 +10,14 @@ class NURBS_spline
         std::vector<float> control_points;
         bool show_influence, show_knots;
         
-        NURBS_spline(std::vector<float> cp, std::vector<float> knots, int degree, int num_pts, std::vector<float> weights_in={});
+        NURBS_spline(std::vector<float> cp, int degree, int num_pts, std::vector<float> knots={}, std::vector<float> weights_in={});
 
+        // Geometry
         void update_cp(int index, HMM_Vec3 new_pos);
-        void generate(int selected_idx);
+        void generate(int selected_idx = -1);
+        void add_cp(HMM_Vec3 pt);
+
+        // Rendering
         void update_buffer();
         void render_spline(const HMM_Mat4 &mvp);
         void render_control_points(const HMM_Mat4 &mvp);
@@ -27,6 +31,9 @@ class NURBS_spline
         int n, p, num_pts;
 
         void curve_point(float u, float *crv_pt);   
+        void calc_weighted_pts();
+        void calc_knots();
+        void create_buffers();
 };
 
 

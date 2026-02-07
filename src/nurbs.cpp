@@ -84,43 +84,43 @@ void compute_basis_funs(float u, int i, int p, std::vector<float> &basis_funs, s
 
 ////////////////////////
 ///// NURBS Spline /////
-
-NURBS_spline::NURBS_spline(std::vector<float> cp, std::vector<float> knots, int degree, int resolution, std::vector<float> weights_in)
+void NURBS_spline::calc_knots()
 {
-    control_points = std::move(cp);
-    knot_vector = std::move(knots);
+    int len_kv = n + p + 2;
+    float val_step = 1.0f / (len_kv - 2.0f * p - 1.0f);
 
-    if(weights_in.empty())
+    knot_vector.resize(len_kv, 0.0f);
+
+    for (int i = p + 1; i < len_kv; i++)
     {
-        this->weights.resize(control_points.size()/3, 1.0f);
+        if (i >= len_kv - (p + 1))
+        {
+            knot_vector[i] = 1.0f;
+        }
+        else
+        {
+            knot_vector[i] = knot_vector[i - 1] + val_step;
+        }
     }
-    else this->weights = std::move(weights_in);
+}
 
-    // Validate knot vector is non-decreasing
-    for (size_t i = 1; i < knot_vector.size(); i++)
-    {
-        assert(knot_vector[i] >= knot_vector[i - 1] && "Knot vector must be non-decreasing");
-    }
-
-    // Create the 4D homogeneous control points array
-    weighted_points.resize(control_points.size()/3*4, 0.0f);
+void NURBS_spline::calc_weighted_pts()
+{
+    weighted_points.resize(control_points.size() / 3 * 4, 0.0f);
     int wp_idx, cp_idx = 0;
-    for(int i = 0; i<weights.size(); i++)
+    for (int i = 0; i < weights.size(); i++)
     {
-        wp_idx = i*4;
-        cp_idx = i*3;
-        weighted_points[wp_idx] = control_points[cp_idx]*this->weights[i];
-        weighted_points[wp_idx+1] = control_points[cp_idx+1]*this->weights[i];
-        weighted_points[wp_idx+2] = control_points[cp_idx+2]*this->weights[i];
-        weighted_points[wp_idx+3] = this->weights[i];
+        wp_idx = i * 4;
+        cp_idx = i * 3;
+        weighted_points[wp_idx] = control_points[cp_idx] * this->weights[i];
+        weighted_points[wp_idx + 1] = control_points[cp_idx + 1] * this->weights[i];
+        weighted_points[wp_idx + 2] = control_points[cp_idx + 2] * this->weights[i];
+        weighted_points[wp_idx + 3] = this->weights[i];
     }
+}
 
-    n = control_points.size() / 3 - 1;
-    p = degree;
-    num_pts = resolution;
-    show_influence = false;
-    show_knots = false;
-
+void NURBS_spline::create_buffers()
+{
     // Create empty dynamic buffers
     sg_buffer_desc crv_buf_desc = {};
     crv_buf_desc.size = (num_pts+1) * 7 * sizeof(float);
@@ -141,9 +141,7 @@ NURBS_spline::NURBS_spline(std::vector<float> cp, std::vector<float> knots, int 
     cp_bind = {};
     cp_bind.vertex_buffers[0] = this->control_pts_buf;
 
-    printf("KNots: %i", knot_vector.size());
-    fflush(stdout); // This is the magic line
-    // Create control point buffer
+    // Create knot buffer
     sg_buffer_desc knot_buf_desc = {};
     knot_buf_desc.size = knot_vector.size() * 7 * sizeof(float);
     knot_buf_desc.usage.dynamic_update = true;
@@ -155,25 +153,45 @@ NURBS_spline::NURBS_spline(std::vector<float> cp, std::vector<float> knots, int 
 
     knots_markers.resize((knot_vector.size()-6) * 7, 0.0f);
 }
-
-void NURBS_spline::update_cp(int index, HMM_Vec3 new_pos)
+NURBS_spline::NURBS_spline(std::vector<float> cp, int degree, int resolution, std::vector<float> knots, std::vector<float> weights_in)
 {
-    int cp_idx = index *3;
-    int wp_idx = index * 4;
+    // Control points
+    control_points = std::move(cp);
+    
+    // Parameters
+    n = control_points.size() / 3 - 1;
+    p = degree;
+    num_pts = resolution;
+    show_influence = false;
+    show_knots = false;
 
-    // Update control point
-    control_points[cp_idx] = new_pos.X;
-    control_points[cp_idx+1] = new_pos.Y;
-    control_points[cp_idx+2] = new_pos.Z;
+    // Knot vector
+    if (knots.empty())
+    {
+        calc_knots();
+    }
+    else
+    {
+        // Validate knot vector is non-decreasing
+        for (size_t i = 1; i < knots.size(); i++)
+        {
+            assert(knots[i] >= knots[i - 1] && "Knot vector must be non-decreasing");
+        }
 
-    // Update weights
-    weighted_points[wp_idx] = control_points[cp_idx]*weights[index];
-    weighted_points[wp_idx+1] = control_points[cp_idx+1]*weights[index];
-    weighted_points[wp_idx+2] = control_points[cp_idx+2]*weights[index];
-    weighted_points[wp_idx+3] = weights[index];
+        knot_vector = std::move(knots);
+    }
 
-    // Regenerate curve geo
-    generate(index);
+    // Weights
+    if(weights_in.empty())
+    {
+        this->weights.resize(control_points.size()/3, 1.0f);
+    }
+    else this->weights = std::move(weights_in);
+
+    // Create the 4D homogeneous control points array
+    calc_weighted_pts();
+
+    create_buffers();    
 }
 
 void NURBS_spline::curve_point(float u, float *out_pos)
@@ -200,6 +218,47 @@ void NURBS_spline::curve_point(float u, float *out_pos)
     out_pos[2] = cw[2]/cw[3];
 }
 
+
+void NURBS_spline::update_cp(int index, HMM_Vec3 new_pos)
+{
+    int cp_idx = index *3;
+    int wp_idx = index * 4;
+
+    // Update control point
+    control_points[cp_idx] = new_pos.X;
+    control_points[cp_idx+1] = new_pos.Y;
+    control_points[cp_idx+2] = new_pos.Z;
+
+    // Update weights
+    weighted_points[wp_idx] = control_points[cp_idx]*weights[index];
+    weighted_points[wp_idx+1] = control_points[cp_idx+1]*weights[index];
+    weighted_points[wp_idx+2] = control_points[cp_idx+2]*weights[index];
+    weighted_points[wp_idx+3] = weights[index];
+
+    // Regenerate curve geo
+    generate(index);
+}
+
+void NURBS_spline::add_cp(HMM_Vec3 new_pos)
+{
+    // Increase n and add new point
+    this->n += 1;
+    control_points.push_back(new_pos.X);
+    control_points.push_back(new_pos.Y);
+    control_points.push_back(new_pos.Z);
+
+    // Calculate knots, weights and weighted points
+    calc_knots();
+    weights.push_back(1.0f);
+    calc_weighted_pts();
+
+    // Rebuild buffers
+    create_buffers();
+    
+    // Generate curve
+    generate();
+}
+
 void NURBS_spline::generate(int selected_idx)
 {
     crv_pts.resize((num_pts + 1) * 7, 0.0f);
@@ -220,7 +279,7 @@ void NURBS_spline::generate(int selected_idx)
         int span = find_span(u, n, p, knot_vector);
         compute_basis_funs(u, span, p, basis_funs, knot_vector);    
 
-        if(selected_idx >= span-p && selected_idx <= span && show_influence)
+        if(selected_idx!=-1 && selected_idx >= span-p && selected_idx <= span && show_influence)
         {
             int local_index = selected_idx - (span-p);
             //influence = basis_funs[local_index];
@@ -258,6 +317,7 @@ void NURBS_spline::generate(int selected_idx)
     color_cp = colour_points(control_points, 0.5f,0.2f,0.9f,1.0f);
 }
 
+// Render functions
 void NURBS_spline::update_buffer()
 {
     sg_update_buffer(crv_vtx_buf, sg_range{crv_pts.data(), crv_pts.size() * sizeof(float)});
