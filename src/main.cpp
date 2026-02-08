@@ -74,9 +74,6 @@ std::vector<float> bsp={
     2.0f, 0.0f, 2.0f,  // P4
     3.0f, 0.0f, 4.0f  // P5
 };
-std::vector<float> bsp_knots = {0.0f,0.0f,0.0f,0.0f,0.5f, 0.8f,1.0f,1.0f,1.0f,1.0f};
-std::vector<float> bsp_weights = {1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
-
 NURBS_spline *bspline;
 
 // Camera
@@ -105,7 +102,16 @@ static struct
     bool buf_update_flag;
 } state;
 
-// Mouse interaction struct and utility functions
+// Interaction enum
+enum InteractionMode
+{
+    MODE_VIEW,
+    MODE_EDIT_CURVE,
+    MODE_CREATE_CURVE,
+    MODE_EDIT_SURFACE
+};
+
+// Interaction struct
 static struct
 {
     bool dragging = false;
@@ -116,6 +122,8 @@ static struct
 
     // Draw curve
     bool add_pts = false;
+
+    InteractionMode mode = MODE_VIEW;
 
 } interaction;
 
@@ -247,8 +255,24 @@ static void print_status_text(float disp_w, float disp_h)
 
     sdtx_printf("Window x: %.2f, y: %.2f\n", interaction.mouse_x, interaction.mouse_y);
     sdtx_printf("NDC x: %.2f, y: %.2f\n", interaction.ndc_x, interaction.ndc_y);
-    sdtx_printf("Creation mode: %s \n", interaction.add_pts ? "on":"off");
-    sdtx_printf("Bspline points: %i \n", bspline->control_points.size());
+
+    // Interaction mode
+    switch (interaction.mode)
+    {
+    case MODE_VIEW:
+        sdtx_printf("Mode: view \n");
+        break;
+    case MODE_EDIT_CURVE:
+        sdtx_printf("Mode: edit curve \n");
+        sdtx_printf("Toggle:\n");
+        sdtx_printf("  Display CP influence - i\n");
+        sdtx_printf("  Display knots - k\n");
+        sdtx_printf("  Add points - c\n");
+        break;
+    case MODE_EDIT_SURFACE:
+        sdtx_printf("Mode: edit surface \n");
+        break;
+    }
 };
 
 void frame()
@@ -315,37 +339,64 @@ void frame()
 
 void event(const sapp_event *ev)
 {
-    // Window actions
-    switch (ev->type)
+    // Switch modes
+    if (ev->type == SAPP_EVENTTYPE_KEY_DOWN)
     {
-    case SAPP_EVENTTYPE_KEY_DOWN:
-        if (ev->key_code == SAPP_KEYCODE_ESCAPE)
+        if (ev->key_code == SAPP_KEYCODE_1)
+        {
+            interaction.mode = MODE_VIEW;
+        }
+        else if (ev->key_code == SAPP_KEYCODE_2)
+        {
+            interaction.mode = MODE_EDIT_CURVE;
+        }
+        else if (ev->key_code == SAPP_KEYCODE_3)
+        {
+            interaction.mode = MODE_EDIT_SURFACE;
+        }
+        else if (ev->key_code == SAPP_KEYCODE_ESCAPE)
         {
             sapp_quit();
         }
-        else if (ev->key_code == SAPP_KEYCODE_F)
-        {
-            camera->reset();
-        } 
-        else if (ev->key_code == SAPP_KEYCODE_K)
-        {
-            if(bspline->show_knots) bspline->show_knots = false;
-            else bspline->show_knots = true;
-        } 
-        else if (ev->key_code == SAPP_KEYCODE_I)
-        {
-            if(bspline->show_influence) bspline->show_influence = false;
-            else bspline->show_influence = true;
-        } 
-        else if (ev->key_code == SAPP_KEYCODE_C)
-        {
-            if(interaction.add_pts) interaction.add_pts = false;
-            else interaction.add_pts = true;
-        } 
-        break;
+    }
 
-    case SAPP_EVENTTYPE_MOUSE_DOWN:
-        if (ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
+    // General interaction
+    switch (interaction.mode)
+    {
+    case MODE_VIEW:
+        camera->handle_events(ev);
+        break;
+    case MODE_EDIT_CURVE:
+        if (ev->type == SAPP_EVENTTYPE_KEY_DOWN)
+        {
+            if (ev->key_code == SAPP_KEYCODE_K)
+            {
+                if (bspline->show_knots)
+                {
+                    bspline->show_knots = false;
+                }
+                else
+                {
+                    state.buf_update_flag = true;
+                    bspline->show_knots = true;
+                }
+            }
+            else if (ev->key_code == SAPP_KEYCODE_I)
+            {
+                if (bspline->show_influence)
+                    bspline->show_influence = false;
+                else
+                    bspline->show_influence = true;
+            }
+            else if (ev->key_code == SAPP_KEYCODE_C)
+            {
+                if (interaction.add_pts)
+                    interaction.add_pts = false;
+                else
+                    interaction.add_pts = true;
+            }
+        }
+        else if (ev->type == SAPP_EVENTTYPE_MOUSE_DOWN && ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
         {
             if (interaction.add_pts)
             {
@@ -362,43 +413,27 @@ void event(const sapp_event *ev)
                 interaction.selected_cp_index = closest_cp(bspline->control_points, state.current_mvp);
             }
         }
-        else if (ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
-        {
-            sapp_lock_mouse(true);
-            camera->handle_events(ev);
-        }
-        break;
-
-    case SAPP_EVENTTYPE_MOUSE_UP:
-        if (ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
+        else if (ev->type == SAPP_EVENTTYPE_MOUSE_UP && ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
         {
             interaction.dragging = false;
         }
-        else if (ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
+        else if (ev->type == SAPP_EVENTTYPE_MOUSE_MOVE)
         {
-            sapp_lock_mouse(false);
-        }
-        break;
-
-    case SAPP_EVENTTYPE_MOUSE_MOVE:
-        if (interaction.dragging)
-        {
-            state.buf_update_flag = true;
-            update_mouse_pos(ev);
-            if (interaction.selected_cp_index != -1)
+            if (interaction.dragging)
             {
-                move_pt(interaction.selected_cp_index, interaction.mouse_ray, camera->calculate_position());
+                state.buf_update_flag = true;
+                update_mouse_pos(ev);
+                if (interaction.selected_cp_index != -1)
+                {
+                    move_pt(interaction.selected_cp_index, interaction.mouse_ray, camera->calculate_position());
+                }
             }
         }
-        else if(sapp_mouse_locked())
-        {
-            camera->handle_events(ev);
-        }
-        break;
-    case SAPP_EVENTTYPE_MOUSE_SCROLL:
         camera->handle_events(ev);
         break;
-
+    case MODE_EDIT_SURFACE:
+        camera->handle_events(ev);
+        break;
     }
 }
 

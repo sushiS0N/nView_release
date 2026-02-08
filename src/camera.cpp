@@ -82,13 +82,32 @@ void Camera::handle_events(const sapp_event *ev)
 {
     switch (ev->type)
     {
+    case SAPP_EVENTTYPE_MOUSE_DOWN:
+        if (ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
+        {
+            sapp_lock_mouse(true);
+        }
+        break;
+    case SAPP_EVENTTYPE_MOUSE_UP:
+        if (ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
+        {
+            sapp_lock_mouse(false);
+        }
+        break;
     case SAPP_EVENTTYPE_MOUSE_SCROLL:
         zoom(ev->scroll_y * -0.5f);
         break;
 
     case SAPP_EVENTTYPE_MOUSE_MOVE:
+        if (sapp_mouse_locked())
         {
             orbit(ev->mouse_dx * -0.25f, ev->mouse_dy * 0.25f);
+        }
+        break;
+    case SAPP_KEYCODE_DOWN:
+        if (ev->key_code == SAPP_KEYCODE_F)
+        {
+            reset();
         }
         break;
     }
