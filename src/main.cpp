@@ -29,15 +29,26 @@
 
 // GEOMETRY
 // NURBS - surface
+// std::vector<float> srf_cp = {
+//     // Row 0 (j=0)
+//     0.0f, 0.0f, 0.0f,    2.0f, 0.0f, 1.0f,    4.0f, 0.0f, 1.0f,    6.0f, 0.0f, 0.0f,
+//     // Row 1 (j=1)
+//     0.0f, 2.0f, 1.0f,    2.0f, 2.0f, 3.0f,    4.0f, 2.0f, 3.0f,    6.0f, 2.0f, 1.0f,
+//     // Row 2 (j=2)
+//     0.0f, 4.0f, 1.0f,    2.0f, 4.0f, 3.0f,    4.0f, 4.0f, 3.0f,    6.0f, 4.0f, 1.0f,
+//     // Row 3 (j=3)
+//     0.0f, 6.0f, 0.0f,    2.0f, 6.0f, 1.0f,    4.0f, 6.0f, 1.0f,    6.0f, 6.0f, 0.0f
+// };
+
 std::vector<float> srf_cp = {
     // Row 0 (j=0)
-    0.0f, 0.0f, 0.0f,    2.0f, 0.0f, 1.0f,    4.0f, 0.0f, 1.0f,    6.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f,    2.0f, 0.0f, 0.0f,    4.0f, 0.0f, 0.0f,    6.0f, 0.0f, 0.0f,
     // Row 1 (j=1)
-    0.0f, 2.0f, 1.0f,    2.0f, 2.0f, 3.0f,    4.0f, 2.0f, 3.0f,    6.0f, 2.0f, 1.0f,
+    0.0f, 0.0f, 2.0f,    2.0f, 3.0f, 2.0f,    4.0f, 0.0f, 2.0f,    6.0f, 0.0f, 2.0f,
     // Row 2 (j=2)
-    0.0f, 4.0f, 1.0f,    2.0f, 4.0f, 3.0f,    4.0f, 4.0f, 3.0f,    6.0f, 4.0f, 1.0f,
+    0.0f, 0.0f, 4.0f,    2.0f, 3.0f, 4.0f,    4.0f, 0.0f, 4.0f,    6.0f, 0.0f, 4.0f,
     // Row 3 (j=3)
-    0.0f, 6.0f, 0.0f,    2.0f, 6.0f, 1.0f,    4.0f, 6.0f, 1.0f,    6.0f, 6.0f, 0.0f
+    0.0f, 0.0f, 6.0f,    2.0f, 0.0f, 6.0f,    4.0f, 0.0f, 6.0f,    6.0f, 0.0f, 6.0f,
 };
 
 std::vector<float> u_knots = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f};
@@ -50,7 +61,7 @@ std::vector<float> srf_weights = {
     1.0f, 1.0f, 1.0f, 1.0f
 };
 
-NURBS_surface* surface = new NURBS_surface(srf_cp, u_knots, v_knots, 3, 4, 4, 20, srf_weights);
+NURBS_surface* surface;
 
 // Bezier patch
 float bez_cp[48] = {
@@ -123,7 +134,7 @@ static struct
     // Draw curve
     bool add_pts = false;
 
-    InteractionMode mode = MODE_VIEW;
+    InteractionMode mode = MODE_EDIT_SURFACE;
 
 } interaction;
 
@@ -214,7 +225,7 @@ HMM_Vec3 screen_to_ray(float ndc_x, float ndc_y, HMM_Mat4 proj, HMM_Mat4 view)
     return HMM_NormV3(ray_dir);
 }
 
-void move_pt(int cp_idx, HMM_Vec3 ray_dir, HMM_Vec3 camera_pos)
+void move_crv_pt(int cp_idx, HMM_Vec3 ray_dir, HMM_Vec3 camera_pos)
 {
     // Intersect mouse_ray with XZ plane
     HMM_Vec3 pos_XZ = line_plane_int(camera_pos, ray_dir);
@@ -224,6 +235,18 @@ void move_pt(int cp_idx, HMM_Vec3 ray_dir, HMM_Vec3 camera_pos)
     
     // Update control point and curve
     bspline->update_cp(cp_idx, pos_XZ);
+}
+
+void move_srf_pt(int cp_idx, HMM_Vec3 ray_dir, HMM_Vec3 camera_pos)
+{
+    // Intersect mouse_ray with XZ plane
+    HMM_Vec3 pos_XZ = line_plane_int(camera_pos, ray_dir);
+    surface->control_points[cp_idx*3] = pos_XZ.X;
+    surface->control_points[cp_idx*3+1] = pos_XZ.Y;
+    //bspline->control_points[cp_idx*3+2] = pos_XZ.Z; // no need for Z
+    
+    // Update control point and curve
+    surface->update_srf_cp(cp_idx, pos_XZ);
 }
 
 // Loggin functions
@@ -301,6 +324,7 @@ void frame()
     if(state.buf_update_flag)
     {
         bspline->update_buffer();
+        surface->update_buffer();
         state.buf_update_flag = false;
     }
 
@@ -310,28 +334,39 @@ void frame()
     sg_apply_pipeline(state.pip_lines);
     gizmo->render_axis_indicator(mvp);
 
-    // Display bspline
-    sg_apply_pipeline(state.pip_curves);
-    bspline->render_spline(mvp);
-
-    // Draw bspline control polygon
-    sg_apply_pipeline(state.pip_curves);
-    bspline->render_control_points(mvp);
-
-    // Draw bspline control points
-    sg_apply_pipeline(state.pip_pts);
-    bspline->render_control_points(mvp);
-
-    // Draw bspline markers
-    if (bspline->show_knots)
+    switch (interaction.mode)
     {
+    case MODE_EDIT_CURVE:
+        // Display bspline
+        sg_apply_pipeline(state.pip_curves);
+        bspline->render_spline(mvp);
+
+        // Draw control polygon
+        sg_apply_pipeline(state.pip_curves);
+        bspline->render_control_points(mvp);
+
+        // Draw bspline control points
         sg_apply_pipeline(state.pip_pts);
-        bspline->render_knots(mvp);
+        bspline->render_control_points(mvp);
+
+        // Draw bspline markers
+        if (bspline->show_knots)
+        {
+            sg_apply_pipeline(state.pip_pts);
+            bspline->render_knots(mvp);
+        }
+        break;
+    case MODE_EDIT_SURFACE:
+        // Draw surface
+        sg_apply_pipeline(state.pip_triangles);
+        surface->render_surface(mvp);
+
+        // Draw surface's control points
+        sg_apply_pipeline(state.pip_pts);
+        surface->render_control_points(mvp);
+        break;
     }
 
-    // sg_apply_pipeline(state.pip_triangles);
-    // surface->render_surface(mvp);
-    
     sdtx_draw();
     sg_end_pass();
     sg_commit();
@@ -425,13 +460,36 @@ void event(const sapp_event *ev)
                 update_mouse_pos(ev);
                 if (interaction.selected_cp_index != -1)
                 {
-                    move_pt(interaction.selected_cp_index, interaction.mouse_ray, camera->calculate_position());
+                    move_crv_pt(interaction.selected_cp_index, interaction.mouse_ray, camera->calculate_position());
                 }
             }
         }
         camera->handle_events(ev);
         break;
     case MODE_EDIT_SURFACE:
+        if (ev->type == SAPP_EVENTTYPE_MOUSE_DOWN && ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
+        {
+            interaction.dragging = true;
+
+            update_mouse_pos(ev);
+            interaction.selected_cp_index = closest_cp(surface->control_points, state.current_mvp);
+        }
+        else if (ev->type == SAPP_EVENTTYPE_MOUSE_UP && ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
+        {
+            interaction.dragging = false;
+        }
+        else if (ev->type == SAPP_EVENTTYPE_MOUSE_MOVE)
+        {
+            if (interaction.dragging)
+            {
+                state.buf_update_flag = true;
+                update_mouse_pos(ev);
+                if (interaction.selected_cp_index != -1)
+                {
+                    move_srf_pt(interaction.selected_cp_index, interaction.mouse_ray, camera->calculate_position());
+                }
+            }
+        }
         camera->handle_events(ev);
         break;
     }
@@ -461,7 +519,9 @@ void init()
     state.buf_update_flag = true;
 
     // NURBS surface
-    //surface->generate_mesh();
+    surface = new NURBS_surface(srf_cp, u_knots, v_knots, 3, 4, 4, 20, srf_weights);
+    surface->generate_mesh();
+    state.buf_update_flag = true;
 
     // Create shader
     sg_shader shd = sg_make_shader(shd_shader_desc(sg_query_backend()));

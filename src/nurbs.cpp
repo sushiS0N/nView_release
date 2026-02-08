@@ -153,6 +153,7 @@ void NURBS_spline::create_buffers()
 
     knots_markers.resize((knot_vector.size()-6) * 7, 0.0f);
 }
+
 NURBS_spline::NURBS_spline(std::vector<float> cp, int degree, int resolution, std::vector<float> knots, std::vector<float> weights_in)
 {
     // Control points
@@ -221,7 +222,7 @@ void NURBS_spline::curve_point(float u, float *out_pos)
 
 void NURBS_spline::update_cp(int index, HMM_Vec3 new_pos)
 {
-    int cp_idx = index *3;
+    int cp_idx = index * 3;
     int wp_idx = index * 4;
 
     // Update control point
@@ -254,7 +255,7 @@ void NURBS_spline::add_cp(HMM_Vec3 new_pos)
 
     // Rebuild buffers
     create_buffers();
-    
+
     // Generate curve
     generate();
 }
@@ -369,6 +370,57 @@ void NURBS_spline::render_knots(const HMM_Mat4 &mvp)
 
 //////////////////////////////////
 ///// NURBS Surface functions /////
+void NURBS_surface::create_buffers()
+{
+    // Create vertex buffer
+    sg_buffer_desc vbuf_desc = {};
+    vbuf_desc.size = mesh_verts.size() * sizeof(float); 
+    vbuf_desc.usage.dynamic_update = true;   
+    vbuf_desc.label = "NURBS_surface_vertices";
+    mesh_vtx_buf = sg_make_buffer(vbuf_desc);
+
+    // Create index buffer
+    std::vector<uint16_t> indices(num_indices, 0);
+    int quad_idx = 0;
+    for (int i = 0; i < resolution; i++)
+    {
+        for (int j = 0; j < resolution; j++)
+        {
+            // Create triangle indices array ccw winding
+            // Tri 1
+            indices[quad_idx * 6] = i * (resolution + 1) + j;
+            indices[quad_idx * 6 + 1] = (i + 1) * (resolution + 1) + j;
+            indices[quad_idx * 6 + 2] = (i + 1) * (resolution + 1) + (j + 1);
+            // Tri 2
+            indices[quad_idx * 6 + 3] = i * (resolution + 1) + j;
+            indices[quad_idx * 6 + 4] = (i + 1) * (resolution + 1) + (j + 1);
+            indices[quad_idx * 6 + 5] = i * (resolution + 1) + (j + 1);
+
+            quad_idx++;
+        }
+    }
+
+    sg_buffer_desc ibuf_desc = {};
+    ibuf_desc.usage.index_buffer = true;
+    ibuf_desc.data.ptr = indices.data();
+    ibuf_desc.data.size = indices.size() * sizeof(uint16_t);
+    ibuf_desc.label = "NURBS_surface_indices";
+    mesh_idx_buf = sg_make_buffer(ibuf_desc);
+
+    sg_buffer_desc cp_buf = {};
+    cp_buf.size = control_points.size() / 3 * 7 * sizeof(float);
+    cp_buf.usage.dynamic_update = true;   
+    cp_buf.label = "NURBS_control_points";
+    control_pts_buf = sg_make_buffer(cp_buf);
+
+    mesh_bind = {};
+    mesh_bind.vertex_buffers[0] = mesh_vtx_buf;
+    mesh_bind.index_buffer = mesh_idx_buf;
+
+    scp_bind = {};
+    scp_bind.vertex_buffers[0] = control_pts_buf;
+}
+
 
 NURBS_surface::NURBS_surface(std::vector<float> cp, std::vector<float> u_knot_vector, std::vector<float> v_knot_vector, 
                             int degree, int u_num, int v_num, int res, std::vector<float> weights_in)
@@ -408,12 +460,22 @@ NURBS_surface::NURBS_surface(std::vector<float> cp, std::vector<float> u_knot_ve
     num_pts = u_num_pts * v_num_pts;
     resolution = res;
 
+
     n = u_num_pts - 1; // last index in u direction
     m = v_num_pts - 1; // last index in v direction
 
     p = degree; // degree in u direction
     q = degree; // degree in v direction
+
+    num_indices = resolution*resolution*6;
+
+    int num_verts = (resolution+1)*(resolution+1);
+    mesh_verts.resize(num_verts * 7, 0.0f);
+
+    create_buffers();
+    color_cp = std::move(colour_points(control_points, 1.0f, 0.0f, 0.0f, 1.0f));
 }
+
 
 void NURBS_surface::surface_point(float u, float v, float *out_pos)
 {
@@ -433,12 +495,11 @@ void NURBS_surface::surface_point(float u, float v, float *out_pos)
 
     for (int l = 0; l <= q; l++)
     {
-        temp[l] = 0.0f;
-
         for (int k = 0; k <= p; k++)
         {
             int i_idx = uspan - p + k;
             int j_idx = vspan - q + l;
+
             int srf_idx = (i_idx * v_num_pts + j_idx) * 4;
             int t_idx = l * 4;
 
@@ -466,76 +527,61 @@ void NURBS_surface::surface_point(float u, float v, float *out_pos)
 
 void NURBS_surface::generate_mesh()
 {
-    int num_verts = (resolution+1)*(resolution+1);
-    std::vector<float> vertices(num_verts * 7);
-    std::vector<uint16_t> indices(resolution*resolution*6);
-
     int vtx_idx = 0;
-    // float min_z = 0.0f;
-    // float max_z = 0.3f;
     for (int i = 0; i <= resolution; i++)
     {
         float u = (float)i / (float)resolution;
+
         for (int j = 0; j <= resolution; j++)
         {
             vtx_idx = i * (resolution + 1) + j;
             int arr_idx = vtx_idx * 7;
+
             float v = (float)j / (float)resolution;
             float out_pos[3];
             surface_point(u, v, out_pos);
 
-            vertices[arr_idx] = out_pos[0];
-            vertices[arr_idx + 1] = out_pos[1];
-            vertices[arr_idx + 2] = out_pos[2];
+            mesh_verts[arr_idx] = out_pos[0];
+            mesh_verts[arr_idx + 1] = out_pos[1];
+            mesh_verts[arr_idx + 2] = out_pos[2];
 
             // Point color
-            vertices[arr_idx + 3] = 1.0f;
-            vertices[arr_idx + 4] = 0.8f;
-            vertices[arr_idx + 5] = 1.0f;
-            vertices[arr_idx + 6] = 1.0f;
+            mesh_verts[arr_idx + 3] = 1.0f;
+            mesh_verts[arr_idx + 4] = 0.8f;
+            mesh_verts[arr_idx + 5] = 1.0f;
+            mesh_verts[arr_idx + 6] = 1.0f;
         }
     }
-
-    int quad_idx = 0;
-    for (int i = 0; i < resolution; i++)
-    {
-        for (int j = 0; j < resolution; j++)
-        {
-            // Create triangle indices array
-            // Tri 1
-            indices[quad_idx * 6] = i * (resolution + 1) + j;
-            indices[quad_idx * 6 + 1] = (i + 1) * (resolution + 1) + j;
-            indices[quad_idx * 6 + 2] = (i + 1) * (resolution + 1) + (j + 1);
-            // Tri 2
-            indices[quad_idx * 6 + 3] = i * (resolution + 1) + j;
-            indices[quad_idx * 6 + 4] = (i + 1) * (resolution + 1) + (j + 1);
-            indices[quad_idx * 6 + 5] = i * (resolution + 1) + (j + 1);
-
-            quad_idx++;
-        }
-    }
-
-    // Create vertex buffer
-    sg_buffer_desc vbuf_desc = {};
-    vbuf_desc.data = sg_range{vertices.data(), vertices.size() * sizeof(float)}; // keep as alternate way of ceating the struct
-    // vbuf_desc.usage.dynamic_update = true;
-    vbuf_desc.label = "NURBS_surface_vertices";
-    mesh_vtx_buf = sg_make_buffer(vbuf_desc);
-
-    // Create index buffer
-    sg_buffer_desc ibuf_desc = {};
-    ibuf_desc.usage.index_buffer = true;
-    ibuf_desc.data.ptr = indices.data();
-    ibuf_desc.data.size = indices.size() * sizeof(uint16_t);
-    ibuf_desc.label = "NURBS_surface_indices";
-    mesh_idx_buf = sg_make_buffer(ibuf_desc);
-
-    num_indices = indices.size();
-
-    mesh_bind = {};
-    mesh_bind.vertex_buffers[0] = mesh_vtx_buf;
-    mesh_bind.index_buffer = mesh_idx_buf;
 }
+
+void NURBS_surface::update_srf_cp(int index, HMM_Vec3 new_pos)
+{
+    int cp_index = index * 3;
+    int wp_index = index * 4;
+
+    // Update control point
+    control_points[cp_index] = new_pos.X;
+    // keep Y
+    control_points[cp_index + 2] = new_pos.Z;
+
+    weighted_points[wp_index] = control_points[cp_index]*weights[index];
+    // keep Y
+    weighted_points[wp_index+2] = control_points[cp_index+2]*weights[index];
+    // keep same weight 
+
+    color_cp = std::move(colour_points(control_points, 1.0f, 0.0f,0.0f,1.0f));
+
+    generate_mesh();
+}
+
+void NURBS_surface::update_buffer()
+{
+    sg_update_buffer(mesh_vtx_buf, sg_range{mesh_verts.data(), mesh_verts.size() * sizeof(float)});
+    sg_update_buffer(control_pts_buf, sg_range{color_cp.data(), color_cp.size() * sizeof(float)});
+    //sg_update_buffer(mesh_idx_buf, sg_range{indices.data(), indices.size() * sizeof(float)});
+
+}
+
 
 void NURBS_surface::render_surface(const HMM_Mat4 &mvp)
 {
@@ -550,10 +596,9 @@ void NURBS_surface::render_surface(const HMM_Mat4 &mvp)
     sg_draw(0, num_indices, 1);
 }
 
-/*
-void NURBS_spline::render_control_points(const HMM_Mat4 &mvp)
+void NURBS_surface::render_control_points(const HMM_Mat4 &mvp)
 {
-    sg_apply_bindings(cp_bind);
+    sg_apply_bindings(scp_bind);
 
     // Struct for shader
     vs_params_t params = {};
@@ -561,6 +606,5 @@ void NURBS_spline::render_control_points(const HMM_Mat4 &mvp)
     params.point_size = 10.0f;
 
     sg_apply_uniforms(0, SG_RANGE_REF(params));
-    sg_draw(0, n + 1, 1);
+    sg_draw(0, control_points.size()/3, 1);
 }
-*/

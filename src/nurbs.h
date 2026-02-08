@@ -41,10 +41,13 @@ class NURBS_spline
 class NURBS_surface
 {
     public:
+        std::vector<float> control_points;
+
         NURBS_surface(std::vector<float> cp, std::vector<float> u_knot_vector, std::vector<float> v_knot_vector, 
                     int degree, int u_num, int v_num, int resolution, std::vector<float> weights_in = {});
 
         void generate_mesh();
+        void update_srf_cp(int index, HMM_Vec3 new_pos);
         void update_buffer();
         void render_surface(const HMM_Mat4 &mvp);
         void render_control_points(const HMM_Mat4 &mvp);
@@ -53,9 +56,10 @@ class NURBS_surface
 
     private:
         sg_buffer control_pts_buf, mesh_vtx_buf, mesh_idx_buf;
-        sg_bindings cp_bind, mesh_bind;
-        std::vector<float> control_points, u_knots, v_knots, weights, weighted_points, u_basis_funs, v_basis_funs;
+        sg_bindings scp_bind, mesh_bind;
+        std::vector<float> color_cp, mesh_verts, u_knots, v_knots, weights, weighted_points, u_basis_funs, v_basis_funs;
         int n, m, p, q, u_num_pts, v_num_pts, num_pts, num_indices, resolution; 
         
+        void create_buffers();
         void surface_point(float u, float v, float *crv_pt);   
 };
