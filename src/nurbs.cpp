@@ -386,7 +386,7 @@ void NURBS_surface::create_buffers()
     mesh_vtx_buf = sg_make_buffer(vbuf_desc);
 
     // Create index buffer
-    std::vector<uint16_t> indices(num_indices, 0);
+    indices.resize(num_indices, 0);
     int quad_idx = 0;
     for (int i = 0; i < resolution; i++)
     {
@@ -426,6 +426,46 @@ void NURBS_surface::create_buffers()
 
     scp_bind = {};
     scp_bind.vertex_buffers[0] = control_pts_buf;
+
+    // Control polygon index buffer
+    int num_seg = 2*(u_num_pts-1)*(v_num_pts-1) + (u_num_pts-1) + (v_num_pts-1);
+    ctrl_indices.resize(0, 0);
+    printf("Rows:\n");
+    for (int i = 0; i < u_num_pts; i++)
+    {
+        for (int j = 1; j < v_num_pts; j++)
+        {
+            ctrl_indices.push_back(i*v_num_pts+j-1);
+            ctrl_indices.push_back(i*v_num_pts+j);
+            printf("[%i, %i]; ",i*v_num_pts+j-1,i*v_num_pts+j);
+        }
+    }
+    printf("\nColumns:\n");
+
+    for (int j = 0; j < v_num_pts; j++)
+    {
+        for (int i = 1; i < u_num_pts; i++)
+        {
+            ctrl_indices.push_back(j + u_num_pts*i-u_num_pts);
+            ctrl_indices.push_back(j + u_num_pts*i);
+            printf("[%i, %i]; ",j + u_num_pts*i-u_num_pts,j + u_num_pts*i);
+        }
+    }
+
+    printf("\nnum seg = %i", num_seg);
+    printf("ctrl_indices.size = %i", ctrl_indices.size());
+    fflush(stdout);
+
+    sg_buffer_desc ctrl_ibuf_desc = {};
+    ctrl_ibuf_desc.usage.index_buffer = true;
+    ctrl_ibuf_desc.data.ptr = ctrl_indices.data();
+    ctrl_ibuf_desc.data.size = ctrl_indices.size() * sizeof(uint16_t);
+    ctrl_ibuf_desc.label = "NURBS_ctrl_polygon_indices";
+    ctrl_poly_idx_buf = sg_make_buffer(ctrl_ibuf_desc);
+
+    ctrl_poly_bind = {};
+    ctrl_poly_bind.vertex_buffers[0] = control_pts_buf;
+    ctrl_poly_bind.index_buffer = ctrl_poly_idx_buf;
 }
 
 
@@ -468,11 +508,11 @@ NURBS_surface::NURBS_surface(std::vector<float> cp, std::vector<float> u_knot_ve
     resolution = res;
 
 
-    n = u_num_pts - 1; // last index in u direction
-    m = v_num_pts - 1; // last index in v direction
+    n = u_num_pts - 1;  // last index in u direction
+    m = v_num_pts - 1;  // last index in v direction
 
-    p = degree; // degree in u direction
-    q = degree; // degree in v direction
+    p = degree;         // degree in u direction
+    q = degree;         // degree in v direction
 
     num_indices = resolution*resolution*6;
 
@@ -550,46 +590,51 @@ void NURBS_surface::generate_mesh()
 
             mesh_verts[arr_idx] = out_pos[0];
             mesh_verts[arr_idx + 1] = out_pos[1];
-            mesh_verts[arr_idx + 2] = out_pos[2];
-
-            float h = 0.01f;            
-            float u_minus = (u - h >= 0.0f) ? (u - h) : u;
-            float u_plus  = (u + h <= 1.0f) ? (u + h) : u;
-            float v_minus = (v - h >= 0.0f) ? (v - h) : v;
-            float v_plus  = (v + h <= 1.0f) ? (v + h) : v;
-
-            float temp[3];
-            surface_point(u_minus, v, temp);
-            HMM_Vec3 S_u_minus = HMM_V3(temp[0], temp[1], temp[2]);
-
-            surface_point(u_plus, v, temp);
-            HMM_Vec3 S_u_plus = HMM_V3(temp[0], temp[1], temp[2]);
-
-            surface_point(u, v_minus, temp);
-            HMM_Vec3 S_v_minus = HMM_V3(temp[0], temp[1], temp[2]);
-
-            surface_point(u, v_plus, temp);
-            HMM_Vec3 S_v_plus = HMM_V3(temp[0], temp[1], temp[2]);
-
-            HMM_Vec3 S_u = HMM_DivV3F(HMM_SubV3(S_u_plus, S_u_minus), 2.0f * h);
-            HMM_Vec3 S_v = HMM_DivV3F(HMM_SubV3(S_v_plus, S_v_minus), 2.0f * h);
-            HMM_Vec3 normal = HMM_NormV3(HMM_Cross(S_u, S_v));
-
-            float light = HMM_Dot(normal, HMM_V3(0.5f, 1.0f, 0.5f));
-            light *= .7;
-
-            // Light color
-            mesh_verts[arr_idx + 3] = light;
-            mesh_verts[arr_idx + 4] = light;
-            mesh_verts[arr_idx + 5] = light;
-
-            // // Normal color
-            // mesh_verts[arr_idx + 3] = normal.X;
-            // mesh_verts[arr_idx + 4] = normal.Y;
-            // mesh_verts[arr_idx + 5] = normal.Z;
-
-            mesh_verts[arr_idx + 6] = 1.0f;
+            mesh_verts[arr_idx + 2] = out_pos[2];           
         }
+    }
+    generate_normals();
+    //generate_control_poly();
+}
+
+void NURBS_surface::generate_normals()
+{
+    std::vector<HMM_Vec3> normals(mesh_verts.size()/7, HMM_V3(0,0,0));
+    int cp1_idx = 0;
+    int cp2_idx = 0;
+    int cp3_idx = 0;
+    int n_idx = 0;
+
+    for (int i = 0; i < indices.size(); i+=3)
+    {
+        cp1_idx = indices[i] * 7;
+        cp2_idx = indices[i+1] * 7;
+        cp3_idx = indices[i+2] * 7;
+
+        HMM_Vec3 v1 = HMM_V3(mesh_verts[cp2_idx] - mesh_verts[cp1_idx], mesh_verts[cp2_idx+1] - mesh_verts[cp1_idx+1], mesh_verts[cp2_idx+2] - mesh_verts[cp1_idx+2]);
+        HMM_Vec3 v2 = HMM_V3(mesh_verts[cp3_idx] - mesh_verts[cp1_idx], mesh_verts[cp3_idx+1] - mesh_verts[cp1_idx+1], mesh_verts[cp3_idx+2] - mesh_verts[cp1_idx+2]);
+        HMM_Vec3 normal = HMM_Norm(HMM_Cross(v1,v2));
+        
+        normals[indices[i]] = HMM_Add(normals[indices[i]], normal);
+        normals[indices[i+1]] = HMM_Add(normals[indices[i+1]], normal);
+        normals[indices[i+2]] = HMM_Add(normals[indices[i+2]], normal);
+    }
+
+    int cp_idx = 0;
+    for (int i = 0; i < normals.size(); i++)
+    {
+        HMM_Vec3 temp = HMM_NormV3(normals[i]);
+        HMM_Vec3 light_dir = HMM_NormV3(HMM_V3(0.5f, 1.0f, 0.5f));
+        float light = HMM_Dot(temp, light_dir);
+
+        cp_idx = i * 7;        
+        // mesh_verts[cp_idx + 3] = normals[i].X;
+        // mesh_verts[cp_idx + 4] = normals[i].Y;
+        // mesh_verts[cp_idx + 5] = normals[i].Z;
+        mesh_verts[cp_idx + 3] = light;
+        mesh_verts[cp_idx + 4] = light*.9f;
+        mesh_verts[cp_idx + 5] = light*.8;
+        mesh_verts[cp_idx + 6] = 1.0f;
     }
 }
 
@@ -617,7 +662,6 @@ void NURBS_surface::update_buffer()
 {
     sg_update_buffer(mesh_vtx_buf, sg_range{mesh_verts.data(), mesh_verts.size() * sizeof(float)});
     sg_update_buffer(control_pts_buf, sg_range{color_cp.data(), color_cp.size() * sizeof(float)});
-
 }
 
 
@@ -642,9 +686,23 @@ void NURBS_surface::render_control_points(const HMM_Mat4 &mvp)
     // Struct for shader
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 10.0f;
+    params.point_size = 6.0f;
     params.draw_mode = 0;
 
     sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, control_points.size()/3, 1);
+}
+
+void NURBS_surface::render_control_polygon(const HMM_Mat4 &mvp)
+{
+    sg_apply_bindings(ctrl_poly_bind);
+
+    // Struct for shader
+    vs_params_t params = {};
+    memcpy(params.mvp, &mvp, sizeof(float)*16);
+    params.point_size = 6.0f;
+    params.draw_mode = 0;
+
+    sg_apply_uniforms(0, SG_RANGE_REF(params));
+    sg_draw(0, ctrl_indices.size(), 1);
 }

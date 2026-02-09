@@ -23,33 +23,33 @@
 // + ADD PAN + live weight edit
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // Resolution macros        
-#define RESOLUTION_X 640.0f 
-#define RESOLUTION_Y 480.0f 
+#define RESOLUTION_X 1280.0f 
+#define RESOLUTION_Y 960.0f 
 #define FOV 60.0f * (HMM_PI / 180.0f)
 
 // GEOMETRY
 // NURBS - surface
-// std::vector<float> srf_cp = {
-//     // Row 0 (j=0)
-//     0.0f, 0.0f, 0.0f,    2.0f, 0.0f, 1.0f,    4.0f, 0.0f, 1.0f,    6.0f, 0.0f, 0.0f,
-//     // Row 1 (j=1)
-//     0.0f, 2.0f, 1.0f,    2.0f, 2.0f, 3.0f,    4.0f, 2.0f, 3.0f,    6.0f, 2.0f, 1.0f,
-//     // Row 2 (j=2)
-//     0.0f, 4.0f, 1.0f,    2.0f, 4.0f, 3.0f,    4.0f, 4.0f, 3.0f,    6.0f, 4.0f, 1.0f,
-//     // Row 3 (j=3)
-//     0.0f, 6.0f, 0.0f,    2.0f, 6.0f, 1.0f,    4.0f, 6.0f, 1.0f,    6.0f, 6.0f, 0.0f
-// };
-
 std::vector<float> srf_cp = {
     // Row 0 (j=0)
-    0.0f, 0.0f, 0.0f,    2.0f, 0.0f, 0.0f,    4.0f, 0.0f, 0.0f,    6.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f,    2.0f, 0.0f, 1.0f,    4.0f, 0.0f, 1.0f,    6.0f, 0.0f, 0.0f,
     // Row 1 (j=1)
-    0.0f, 0.0f, 2.0f,    2.0f, 3.0f, 2.0f,    4.0f, 0.0f, 2.0f,    6.0f, 0.0f, 2.0f,
+    0.0f, 2.0f, 1.0f,    2.0f, 2.0f, 3.0f,    4.0f, 2.0f, 3.0f,    6.0f, 2.0f, 1.0f,
     // Row 2 (j=2)
-    0.0f, 0.0f, 4.0f,    2.0f, 3.0f, 4.0f,    4.0f, 0.0f, 4.0f,    6.0f, 0.0f, 4.0f,
+    0.0f, 4.0f, 1.0f,    2.0f, 4.0f, 3.0f,    4.0f, 4.0f, 3.0f,    6.0f, 4.0f, 1.0f,
     // Row 3 (j=3)
-    0.0f, 0.0f, 6.0f,    2.0f, 0.0f, 6.0f,    4.0f, 0.0f, 6.0f,    6.0f, 0.0f, 6.0f,
+    0.0f, 6.0f, 0.0f,    2.0f, 6.0f, 1.0f,    4.0f, 6.0f, 1.0f,    6.0f, 6.0f, 0.0f
 };
+
+// std::vector<float> srf_cp = {
+//     // Row 0 (j=0)
+//     0.0f, 0.0f, 0.0f,    2.0f, 0.0f, 0.0f,    4.0f, 0.0f, 0.0f,    6.0f, 0.0f, 0.0f,
+//     // Row 1 (j=1)
+//     0.0f, 0.0f, 2.0f,    2.0f, 3.0f, 2.0f,    4.0f, 0.0f, 2.0f,    6.0f, 0.0f, 2.0f,
+//     // Row 2 (j=2)
+//     0.0f, 0.0f, 4.0f,    2.0f, 3.0f, 4.0f,    4.0f, 0.0f, 4.0f,    6.0f, 0.0f, 4.0f,
+//     // Row 3 (j=3)
+//     0.0f, 0.0f, 6.0f,    2.0f, 0.0f, 6.0f,    4.0f, 0.0f, 6.0f,    6.0f, 0.0f, 6.0f,
+// };
 
 std::vector<float> u_knots = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f};
 std::vector<float> v_knots = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f};
@@ -99,6 +99,7 @@ static struct
     sg_pipeline pip_triangles;
     sg_pipeline pip_vertices;
     sg_pipeline pip_lines;
+    sg_pipeline pip_idx_lines;
     sg_pipeline pip_curves;
     sg_pipeline pip_pts;
     sg_bindings bind;
@@ -364,6 +365,10 @@ void frame()
         // Draw surface's control points
         sg_apply_pipeline(state.pip_pts);
         surface->render_control_points(mvp);
+
+        // Draw surface's control polygon
+        sg_apply_pipeline(state.pip_idx_lines);
+        surface->render_control_polygon(mvp);
         break;
     }
 
@@ -541,6 +546,12 @@ void init()
     pip_desc_lines.primitive_type = SG_PRIMITIVETYPE_LINES;
     pip_desc_lines.label = "lines_pipeline";
     state.pip_lines = sg_make_pipeline(pip_desc_lines);
+
+    // Indexed lines pipeline
+    sg_pipeline_desc idx_ln_desc = pip_desc_lines;
+    idx_ln_desc.index_type = SG_INDEXTYPE_UINT16;
+    idx_ln_desc.label = "indexed_lines_pipeline";
+    state.pip_idx_lines = sg_make_pipeline(idx_ln_desc);
 
     // Cruve pipeline
     sg_pipeline_desc pip_desc_curves = pip_pts_desc;

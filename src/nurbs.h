@@ -55,11 +55,14 @@ class NURBS_surface
 
 
     private:
-        sg_buffer control_pts_buf, mesh_vtx_buf, mesh_idx_buf;
-        sg_bindings scp_bind, mesh_bind;
-        std::vector<float> color_cp, mesh_verts, u_knots, v_knots, weights, weighted_points, u_basis_funs, v_basis_funs;
+        sg_buffer control_pts_buf, mesh_vtx_buf, mesh_idx_buf, ctrl_poly_buf, ctrl_poly_idx_buf;
+        sg_bindings scp_bind, mesh_bind, ctrl_poly_bind;
+        std::vector<float> color_cp, mesh_verts, ctrl_poly, u_knots, v_knots, weights, weighted_points, u_basis_funs, v_basis_funs;
+        std::vector<uint16_t> indices, ctrl_indices;
+        
         int n, m, p, q, u_num_pts, v_num_pts, num_pts, num_indices, resolution; 
         
         void create_buffers();
         void surface_point(float u, float v, float *crv_pt);   
+        void generate_normals();
 };
