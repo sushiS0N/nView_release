@@ -82,6 +82,8 @@ void compute_basis_funs(float u, int i, int p, std::vector<float> &basis_funs, s
     }
 }
 
+
+
 ////////////////////////
 ///// NURBS Spline /////
 void NURBS_spline::calc_knots()
@@ -337,6 +339,7 @@ void NURBS_spline::render_spline(const HMM_Mat4 &mvp)
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
     params.point_size = 1.0f;
+    params.draw_mode = 0;
 
     sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, this->num_pts + 1, 1);
@@ -350,6 +353,8 @@ void NURBS_spline::render_control_points(const HMM_Mat4 &mvp)
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
     params.point_size = 6.0f;
+    params.draw_mode = 0;
+
 
     sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, n + 1, 1);
@@ -363,6 +368,7 @@ void NURBS_spline::render_knots(const HMM_Mat4 &mvp)
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
     params.point_size = 8.0f;
+    params.draw_mode = 0;
 
     sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, knots_markers.size()/7, 1);
@@ -407,15 +413,16 @@ void NURBS_surface::create_buffers()
     ibuf_desc.label = "NURBS_surface_indices";
     mesh_idx_buf = sg_make_buffer(ibuf_desc);
 
+    mesh_bind = {};
+    mesh_bind.vertex_buffers[0] = mesh_vtx_buf;
+    mesh_bind.index_buffer = mesh_idx_buf;
+
+    // Control point buffer
     sg_buffer_desc cp_buf = {};
     cp_buf.size = control_points.size() / 3 * 7 * sizeof(float);
     cp_buf.usage.dynamic_update = true;   
     cp_buf.label = "NURBS_control_points";
     control_pts_buf = sg_make_buffer(cp_buf);
-
-    mesh_bind = {};
-    mesh_bind.vertex_buffers[0] = mesh_vtx_buf;
-    mesh_bind.index_buffer = mesh_idx_buf;
 
     scp_bind = {};
     scp_bind.vertex_buffers[0] = control_pts_buf;
@@ -545,10 +552,42 @@ void NURBS_surface::generate_mesh()
             mesh_verts[arr_idx + 1] = out_pos[1];
             mesh_verts[arr_idx + 2] = out_pos[2];
 
-            // Point color
-            mesh_verts[arr_idx + 3] = 1.0f;
-            mesh_verts[arr_idx + 4] = 0.8f;
-            mesh_verts[arr_idx + 5] = 1.0f;
+            float h = 0.01f;            
+            float u_minus = (u - h >= 0.0f) ? (u - h) : u;
+            float u_plus  = (u + h <= 1.0f) ? (u + h) : u;
+            float v_minus = (v - h >= 0.0f) ? (v - h) : v;
+            float v_plus  = (v + h <= 1.0f) ? (v + h) : v;
+
+            float temp[3];
+            surface_point(u_minus, v, temp);
+            HMM_Vec3 S_u_minus = HMM_V3(temp[0], temp[1], temp[2]);
+
+            surface_point(u_plus, v, temp);
+            HMM_Vec3 S_u_plus = HMM_V3(temp[0], temp[1], temp[2]);
+
+            surface_point(u, v_minus, temp);
+            HMM_Vec3 S_v_minus = HMM_V3(temp[0], temp[1], temp[2]);
+
+            surface_point(u, v_plus, temp);
+            HMM_Vec3 S_v_plus = HMM_V3(temp[0], temp[1], temp[2]);
+
+            HMM_Vec3 S_u = HMM_DivV3F(HMM_SubV3(S_u_plus, S_u_minus), 2.0f * h);
+            HMM_Vec3 S_v = HMM_DivV3F(HMM_SubV3(S_v_plus, S_v_minus), 2.0f * h);
+            HMM_Vec3 normal = HMM_NormV3(HMM_Cross(S_u, S_v));
+
+            float light = HMM_Dot(normal, HMM_V3(0.5f, 1.0f, 0.5f));
+            light *= .7;
+
+            // Light color
+            mesh_verts[arr_idx + 3] = light;
+            mesh_verts[arr_idx + 4] = light;
+            mesh_verts[arr_idx + 5] = light;
+
+            // // Normal color
+            // mesh_verts[arr_idx + 3] = normal.X;
+            // mesh_verts[arr_idx + 4] = normal.Y;
+            // mesh_verts[arr_idx + 5] = normal.Z;
+
             mesh_verts[arr_idx + 6] = 1.0f;
         }
     }
@@ -578,7 +617,6 @@ void NURBS_surface::update_buffer()
 {
     sg_update_buffer(mesh_vtx_buf, sg_range{mesh_verts.data(), mesh_verts.size() * sizeof(float)});
     sg_update_buffer(control_pts_buf, sg_range{color_cp.data(), color_cp.size() * sizeof(float)});
-    //sg_update_buffer(mesh_idx_buf, sg_range{indices.data(), indices.size() * sizeof(float)});
 
 }
 
@@ -591,6 +629,7 @@ void NURBS_surface::render_surface(const HMM_Mat4 &mvp)
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
     params.point_size = 10.0f;
+    params.draw_mode = 0;
 
     sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, num_indices, 1);
@@ -604,6 +643,7 @@ void NURBS_surface::render_control_points(const HMM_Mat4 &mvp)
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
     params.point_size = 10.0f;
+    params.draw_mode = 0;
 
     sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, control_points.size()/3, 1);

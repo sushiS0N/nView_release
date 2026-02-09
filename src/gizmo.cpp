@@ -56,7 +56,8 @@ void Gizmo::render_axis_indicator(const HMM_Mat4 &mvp)
     // Struct for shader
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 10.0f;
+    params.point_size = 1.0f;
+    params.draw_mode = 0;
 
 
     sg_apply_bindings(axis_gizmo_bind);
