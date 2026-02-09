@@ -520,7 +520,7 @@ NURBS_surface::NURBS_surface(std::vector<float> cp, std::vector<float> u_knot_ve
     mesh_verts.resize(num_verts * 7, 0.0f);
 
     create_buffers();
-    color_cp = std::move(colour_points(control_points, 1.0f, 0.0f, 0.0f, 1.0f));
+    color_cp = std::move(colour_points(control_points, 0.5f,0.2f,0.9f,1.0f));
 }
 
 
@@ -624,16 +624,18 @@ void NURBS_surface::generate_normals()
     for (int i = 0; i < normals.size(); i++)
     {
         HMM_Vec3 temp = HMM_NormV3(normals[i]);
-        HMM_Vec3 light_dir = HMM_NormV3(HMM_V3(0.5f, 1.0f, 0.5f));
+        HMM_Vec3 light_dir = HMM_NormV3(HMM_V3(0.0f, 1.0f, 5.0f));
         float light = HMM_Dot(temp, light_dir);
+
+        sg_color color = sg_color_lerp(sg_dark_turquoise, sg_light_coral, (light + 1.0f) * 0.5f);
 
         cp_idx = i * 7;        
         // mesh_verts[cp_idx + 3] = normals[i].X;
         // mesh_verts[cp_idx + 4] = normals[i].Y;
         // mesh_verts[cp_idx + 5] = normals[i].Z;
-        mesh_verts[cp_idx + 3] = light;
-        mesh_verts[cp_idx + 4] = light*.9f;
-        mesh_verts[cp_idx + 5] = light*.8;
+        mesh_verts[cp_idx + 3] = color.r;
+        mesh_verts[cp_idx + 4] = color.g;
+        mesh_verts[cp_idx + 5] = color.b;
         mesh_verts[cp_idx + 6] = 1.0f;
     }
 }
@@ -653,7 +655,7 @@ void NURBS_surface::update_srf_cp(int index, HMM_Vec3 new_pos)
     weighted_points[wp_index+2] = control_points[cp_index+2]*weights[index];
     // keep same weight 
 
-    color_cp = std::move(colour_points(control_points, 1.0f, 0.0f,0.0f,1.0f));
+    color_cp = std::move(colour_points(control_points, 0.5f,0.2f,0.9f,1.0f)); //INCONSISTENCY FOR UPDATE CHECK!!!!
 
     generate_mesh();
 }

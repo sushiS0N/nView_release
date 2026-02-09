@@ -29,27 +29,17 @@
 
 // GEOMETRY
 // NURBS - surface
+
 std::vector<float> srf_cp = {
     // Row 0 (j=0)
-    0.0f, 0.0f, 0.0f,    2.0f, 0.0f, 1.0f,    4.0f, 0.0f, 1.0f,    6.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f,    2.0f, 1.0f, 0.0f,    4.0f, 2.0f, 0.0f,    6.0f, 0.0f, 0.0f,
     // Row 1 (j=1)
-    0.0f, 2.0f, 1.0f,    2.0f, 2.0f, 3.0f,    4.0f, 2.0f, 3.0f,    6.0f, 2.0f, 1.0f,
+    0.0f, 5.0f, 2.0f,    2.0f, 1.0f, 2.0f,    4.0f, 0.0f, 2.0f,    6.0f, 0.0f, 2.0f,
     // Row 2 (j=2)
-    0.0f, 4.0f, 1.0f,    2.0f, 4.0f, 3.0f,    4.0f, 4.0f, 3.0f,    6.0f, 4.0f, 1.0f,
+    0.0f, 5.0f, 4.0f,    2.0f, 1.0f, 4.0f,    4.0f, 0.0f, 4.0f,    6.0f, 0.0f, 4.0f,
     // Row 3 (j=3)
-    0.0f, 6.0f, 0.0f,    2.0f, 6.0f, 1.0f,    4.0f, 6.0f, 1.0f,    6.0f, 6.0f, 0.0f
+    0.0f, 0.0f, 6.0f,    2.0f, 1.0f, 6.0f,    4.0f, 2.0f, 6.0f,    6.0f, 0.0f, 6.0f,
 };
-
-// std::vector<float> srf_cp = {
-//     // Row 0 (j=0)
-//     0.0f, 0.0f, 0.0f,    2.0f, 0.0f, 0.0f,    4.0f, 0.0f, 0.0f,    6.0f, 0.0f, 0.0f,
-//     // Row 1 (j=1)
-//     0.0f, 0.0f, 2.0f,    2.0f, 3.0f, 2.0f,    4.0f, 0.0f, 2.0f,    6.0f, 0.0f, 2.0f,
-//     // Row 2 (j=2)
-//     0.0f, 0.0f, 4.0f,    2.0f, 3.0f, 4.0f,    4.0f, 0.0f, 4.0f,    6.0f, 0.0f, 4.0f,
-//     // Row 3 (j=3)
-//     0.0f, 0.0f, 6.0f,    2.0f, 0.0f, 6.0f,    4.0f, 0.0f, 6.0f,    6.0f, 0.0f, 6.0f,
-// };
 
 std::vector<float> u_knots = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f};
 std::vector<float> v_knots = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f};
@@ -244,7 +234,7 @@ void move_srf_pt(int cp_idx, HMM_Vec3 ray_dir, HMM_Vec3 camera_pos)
     HMM_Vec3 pos_XZ = line_plane_int(camera_pos, ray_dir);
     surface->control_points[cp_idx*3] = pos_XZ.X;
     surface->control_points[cp_idx*3+1] = pos_XZ.Y;
-    //bspline->control_points[cp_idx*3+2] = pos_XZ.Z; // no need for Z
+    //bspline->control_points[cp_idx*3+2] = pos_XZ.Z; // no need for Z yet
     
     // Update control point and curve
     surface->update_srf_cp(cp_idx, pos_XZ);
@@ -273,7 +263,7 @@ void update_mouse_pos(const sapp_event *ev)
 
 static void print_status_text(float disp_w, float disp_h)
 {
-    sdtx_canvas(disp_w *0.6f, disp_h * 0.6f);
+    sdtx_canvas(disp_w *.5f , disp_h *.5f);
     sdtx_origin(0.5f, 0.5f);
     sdtx_color3f(0.0f,0.7f,0.0f);
 

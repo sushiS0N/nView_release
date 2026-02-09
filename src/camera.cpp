@@ -82,6 +82,12 @@ void Camera::handle_events(const sapp_event *ev)
 {
     switch (ev->type)
     {
+    case SAPP_KEYCODE_DOWN:
+        if (ev->key_code == SAPP_KEYCODE_F)
+        {
+            reset();
+        }
+        break;
     case SAPP_EVENTTYPE_MOUSE_DOWN:
         if (ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
         {
@@ -102,12 +108,6 @@ void Camera::handle_events(const sapp_event *ev)
         if (sapp_mouse_locked())
         {
             orbit(ev->mouse_dx * -0.25f, ev->mouse_dy * 0.25f);
-        }
-        break;
-    case SAPP_KEYCODE_DOWN:
-        if (ev->key_code == SAPP_KEYCODE_F)
-        {
-            reset();
         }
         break;
     }
