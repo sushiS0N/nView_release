@@ -9,6 +9,7 @@
 #include "sokol_glue.h"
 #include "sokol_log.h"
 #include "sokol_debugtext.h"
+#include "sokol_fetch.h"
 
 #include "stdio.h"
 #include <vector>
@@ -32,13 +33,13 @@
 
 std::vector<float> srf_cp = {
     // Row 0 (j=0)
-    0.0f, 0.0f, 0.0f,    2.0f, 1.0f, 0.0f,    4.0f, 2.0f, 0.0f,    6.0f, 0.0f, 0.0f,
+    0.0f, 0.0f, 0.0f,    2.0f, 1.0f, 0.0f,    4.0f, 2.0f, 0.0f,    8.0f, 0.0f, 0.0f,
     // Row 1 (j=1)
-    0.0f, 5.0f, 2.0f,    2.0f, 1.0f, 2.0f,    4.0f, 0.0f, 2.0f,    6.0f, 0.0f, 2.0f,
+    -2.0f, 3.0f, 1.0f,    2.0f, 1.0f, 1.0f,    4.0f, 0.0f, 1.0f,    8.0f, 0.0f, 1.0f,
     // Row 2 (j=2)
-    0.0f, 5.0f, 4.0f,    2.0f, 1.0f, 4.0f,    4.0f, 0.0f, 4.0f,    6.0f, 0.0f, 4.0f,
+    -2.0f, 3.0f, 2.0f,    2.0f, 1.0f, 2.0f,    4.0f, 0.0f, 2.0f,    8.0f, 0.0f, 2.0f,
     // Row 3 (j=3)
-    0.0f, 0.0f, 6.0f,    2.0f, 1.0f, 6.0f,    4.0f, 2.0f, 6.0f,    6.0f, 0.0f, 6.0f,
+    0.0f, 0.0f, 3.0f,    2.0f, 1.0f, 3.0f,    4.0f, 2.0f, 3.0f,    8.0f, 0.0f, 3.0f,
 };
 
 std::vector<float> u_knots = {0.0f, 0.0f, 0.0f, 0.0f, 1.0f, 1.0f, 1.0f, 1.0f};
@@ -67,18 +68,24 @@ float bez_cp[48] = {
 BezierPatch *bez_patch = new BezierPatch(bez_cp, 10);
 
 // NURBS - spline
+// std::vector<float> bsp={
+//     0.0f, 0.0f, 0.0f, // P0
+//     6.0f, 0.0f, 0.0f, // P1 
+//     8.0f, 0.0f, 6.0f, // P2
+//     0.0f, 0.0f, 4.0f, // P3
+//     2.0f, 0.0f, 2.0f,  // P4
+//     3.0f, 0.0f, 4.0f  // P5
+// };
 std::vector<float> bsp={
-    0.0f, 0.0f, 0.0f, // P0
-    6.0f, 0.0f, 0.0f, // P1 
-    8.0f, 0.0f, 6.0f, // P2
-    0.0f, 0.0f, 4.0f, // P3
-    2.0f, 0.0f, 2.0f,  // P4
-    3.0f, 0.0f, 4.0f  // P5
+    0.0f, 0.0f, 7.0f, // P0
+    3.0f, 0.0f, 4.0f, // P1 
+    6.0f, 0.0f, 12.0f, // P2
+    8.0f, 0.0f, 7.0f, // P3
 };
 NURBS_spline *bspline;
 
 // Camera
-Camera *camera = new Camera(HMM_V3(0, 0, 0), 25.0f, 45.0f, 30.0f);
+Camera *camera = new Camera(HMM_V3(0, 0, 0), 30.0f, 45.0f, 30.0f);
 
 // Utils
 Gizmo *gizmo;
@@ -125,7 +132,7 @@ static struct
     // Draw curve
     bool add_pts = false;
 
-    InteractionMode mode = MODE_EDIT_SURFACE;
+    InteractionMode mode = MODE_VIEW;
 
 } interaction;
 
@@ -267,8 +274,8 @@ static void print_status_text(float disp_w, float disp_h)
     sdtx_origin(0.5f, 0.5f);
     sdtx_color3f(0.0f,0.7f,0.0f);
 
-    sdtx_printf("Window x: %.2f, y: %.2f\n", interaction.mouse_x, interaction.mouse_y);
-    sdtx_printf("NDC x: %.2f, y: %.2f\n", interaction.ndc_x, interaction.ndc_y);
+    // sdtx_printf("Window x: %.2f, y: %.2f\n", interaction.mouse_x, interaction.mouse_y);
+    // sdtx_printf("NDC x: %.2f, y: %.2f\n", interaction.ndc_x, interaction.ndc_y);
 
     // Interaction mode
     switch (interaction.mode)
@@ -278,15 +285,24 @@ static void print_status_text(float disp_w, float disp_h)
         break;
     case MODE_EDIT_CURVE:
         sdtx_printf("Mode: edit curve \n");
-        sdtx_printf("Toggle:\n");
-        sdtx_printf("  Display CP influence - i\n");
-        sdtx_printf("  Display knots - k\n");
-        sdtx_printf("  Add points - c\n");
+        sdtx_printf("Toggles:\n");
+        sdtx_printf(" i - display CP influence: %s\n", bspline->show_influence ? "on" : "off");
+        sdtx_printf(" k - display knots: %s\n",  bspline->show_knots ? "on" : "off");
+        sdtx_printf(" c - add points:%s\n", interaction.add_pts ? "on" : "off");
         break;
     case MODE_EDIT_SURFACE:
         sdtx_printf("Mode: edit surface \n");
+        sdtx_printf("RMB - orbit \n");
+        sdtx_printf("LMB - drag points on XZ plane \n");
+        sdtx_printf("F - reset camera \n");
         break;
     }
+
+    sdtx_canvas(disp_w *.5f , disp_h *.5f);
+    sdtx_origin(disp_w *.5f , disp_h *.5f);
+    sdtx_printf("Mode: view \n");
+
+
 };
 
 void frame()
@@ -327,6 +343,15 @@ void frame()
 
     switch (interaction.mode)
     {
+    case MODE_VIEW:
+        // Draw surface
+        sg_apply_pipeline(state.pip_triangles);
+        surface->render_surface(mvp);
+
+        // Display bspline
+        sg_apply_pipeline(state.pip_curves);
+        bspline->render_spline(mvp);
+        break;
     case MODE_EDIT_CURVE:
         // Display bspline
         sg_apply_pipeline(state.pip_curves);
@@ -492,7 +517,7 @@ void event(const sapp_event *ev)
 
 void init()
 {
-    // setup environment and logging function
+    // Setup environment and logging function
     sg_desc desc = {};
     desc.environment = sglue_environment();
     desc.logger.func = slog_func;
@@ -504,6 +529,13 @@ void init()
     sdtx_desc.logger.func = slog_func;
     sdtx_setup(sdtx_desc);  
 
+    // // Setup sokol fetch
+    // sfetch_desc_t sfetch = {};
+    // sfetch.max_requests = 1;
+    // sfetch.num_channels = 1;
+    // sfetch.num_lanes = 1;
+    // sfetch.logger.func = slog_func;
+    // sfetch_setup(sfetch);
     
     // Initialize geometry
     gizmo = new Gizmo();

@@ -594,7 +594,6 @@ void NURBS_surface::generate_mesh()
         }
     }
     generate_normals();
-    //generate_control_poly();
 }
 
 void NURBS_surface::generate_normals()
@@ -642,20 +641,19 @@ void NURBS_surface::generate_normals()
 
 void NURBS_surface::update_srf_cp(int index, HMM_Vec3 new_pos)
 {
-    int cp_index = index * 3;
+    int cp_index = index * 7;
     int wp_index = index * 4;
 
     // Update control point
-    control_points[cp_index] = new_pos.X;
+    color_cp[cp_index] = new_pos.X;
     // keep Y
-    control_points[cp_index + 2] = new_pos.Z;
+    color_cp[cp_index + 2] = new_pos.Z;
 
-    weighted_points[wp_index] = control_points[cp_index]*weights[index];
+    // Update weights
+    weighted_points[wp_index] = color_cp[cp_index]*weights[index];
     // keep Y
-    weighted_points[wp_index+2] = control_points[cp_index+2]*weights[index];
+    weighted_points[wp_index+2] = color_cp[cp_index+2]*weights[index];
     // keep same weight 
-
-    color_cp = std::move(colour_points(control_points, 0.5f,0.2f,0.9f,1.0f)); //INCONSISTENCY FOR UPDATE CHECK!!!!
 
     generate_mesh();
 }
