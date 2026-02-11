@@ -42,6 +42,7 @@ class NURBS_surface
 {
     public:
         std::vector<float> control_points;
+        sg_bindings mesh_bind;
 
         NURBS_surface(std::vector<float> cp, std::vector<float> u_knot_vector, std::vector<float> v_knot_vector, 
                     int degree, int u_num, int v_num, int resolution, std::vector<float> weights_in = {});
@@ -49,14 +50,14 @@ class NURBS_surface
         void generate_mesh();
         void update_srf_cp(int index, HMM_Vec3 new_pos);
         void update_buffer();
-        void render_surface(const HMM_Mat4 &mvp);
+        void render_surface(const HMM_Mat4 &mvp, const HMM_Mat4 &view, bool matcap_loaded);
         void render_control_points(const HMM_Mat4 &mvp);
         void render_control_polygon(const HMM_Mat4 &mvp);
 
 
     private:
         sg_buffer control_pts_buf, mesh_vtx_buf, mesh_idx_buf, ctrl_poly_buf, ctrl_poly_idx_buf;
-        sg_bindings scp_bind, mesh_bind, ctrl_poly_bind;
+        sg_bindings scp_bind, ctrl_poly_bind;
         std::vector<float> color_cp, mesh_verts, ctrl_poly, u_knots, v_knots, weights, weighted_points, u_basis_funs, v_basis_funs;
         std::vector<uint16_t> indices, ctrl_indices;
         

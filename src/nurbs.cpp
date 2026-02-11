@@ -430,17 +430,15 @@ void NURBS_surface::create_buffers()
     // Control polygon index buffer
     int num_seg = 2*(u_num_pts-1)*(v_num_pts-1) + (u_num_pts-1) + (v_num_pts-1);
     ctrl_indices.resize(0, 0);
-    printf("Rows:\n");
+
     for (int i = 0; i < u_num_pts; i++)
     {
         for (int j = 1; j < v_num_pts; j++)
         {
             ctrl_indices.push_back(i*v_num_pts+j-1);
             ctrl_indices.push_back(i*v_num_pts+j);
-            printf("[%i, %i]; ",i*v_num_pts+j-1,i*v_num_pts+j);
         }
     }
-    printf("\nColumns:\n");
 
     for (int j = 0; j < v_num_pts; j++)
     {
@@ -448,13 +446,8 @@ void NURBS_surface::create_buffers()
         {
             ctrl_indices.push_back(j + u_num_pts*i-u_num_pts);
             ctrl_indices.push_back(j + u_num_pts*i);
-            printf("[%i, %i]; ",j + u_num_pts*i-u_num_pts,j + u_num_pts*i);
         }
     }
-
-    printf("\nnum seg = %i", num_seg);
-    printf("ctrl_indices.size = %i", ctrl_indices.size());
-    fflush(stdout);
 
     sg_buffer_desc ctrl_ibuf_desc = {};
     ctrl_ibuf_desc.usage.index_buffer = true;
@@ -629,12 +622,12 @@ void NURBS_surface::generate_normals()
         sg_color color = sg_color_lerp(sg_dark_turquoise, sg_light_coral, (light + 1.0f) * 0.5f);
 
         cp_idx = i * 7;        
-        // mesh_verts[cp_idx + 3] = normals[i].X;
-        // mesh_verts[cp_idx + 4] = normals[i].Y;
-        // mesh_verts[cp_idx + 5] = normals[i].Z;
-        mesh_verts[cp_idx + 3] = color.r;
-        mesh_verts[cp_idx + 4] = color.g;
-        mesh_verts[cp_idx + 5] = color.b;
+        mesh_verts[cp_idx + 3] = normals[i].X;
+        mesh_verts[cp_idx + 4] = normals[i].Y;
+        mesh_verts[cp_idx + 5] = normals[i].Z;
+        // mesh_verts[cp_idx + 3] = color.r;
+        // mesh_verts[cp_idx + 4] = color.g;
+        // mesh_verts[cp_idx + 5] = color.b;
         mesh_verts[cp_idx + 6] = 1.0f;
     }
 }
@@ -664,18 +657,27 @@ void NURBS_surface::update_buffer()
     sg_update_buffer(control_pts_buf, sg_range{color_cp.data(), color_cp.size() * sizeof(float)});
 }
 
-
-void NURBS_surface::render_surface(const HMM_Mat4 &mvp)
+void NURBS_surface::render_surface(const HMM_Mat4 &mvp, const HMM_Mat4 &view, bool matcap_loaded)
 {
     sg_apply_bindings(mesh_bind);
 
-    // Struct for shader
-    vs_params_t params = {};
-    memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 10.0f;
-    params.draw_mode = 0;
+    if (matcap_loaded)
+    {
+        // Matcap shader
+        vs_mat_params_t params = {};
+        memcpy(params.mvp, &mvp, sizeof(float) * 16);
+        memcpy(params.view, &view, sizeof(float) * 16);
+        sg_apply_uniforms(0, SG_RANGE_REF(params));
+    }
+    else
+    {
+        vs_params_t params = {};
+        memcpy(params.mvp, &mvp, sizeof(float) * 16);
+        params.draw_mode = 0;
+        params.point_size = 0.0f;
+        sg_apply_uniforms(0, SG_RANGE_REF(params));
+    }
 
-    sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, num_indices, 1);
 }
 

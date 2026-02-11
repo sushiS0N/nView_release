@@ -3,6 +3,7 @@
 
 #define SOKOL_IMPL
 #define SOKOL_GLCORE
+#define SOKOL_FETCH_IMPL
 
 #include "sokol_app.h"
 #include "sokol_gfx.h"
@@ -10,6 +11,9 @@
 #include "sokol_log.h"
 #include "sokol_debugtext.h"
 #include "sokol_fetch.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
 
 #include "stdio.h"
 #include <vector>
@@ -27,10 +31,15 @@
 #define RESOLUTION_X 1280.0f 
 #define RESOLUTION_Y 960.0f 
 #define FOV 60.0f * (HMM_PI / 180.0f)
+#define MAX_FILE_SIZE 1024*1024
+
+
+// Image loading
+static void response_callback(const sfetch_response_t*);
+static uint8_t buffer[MAX_FILE_SIZE];
 
 // GEOMETRY
 // NURBS - surface
-
 std::vector<float> srf_cp = {
     // Row 0 (j=0)
     0.0f, 0.0f, 0.0f,    2.0f, 1.0f, 0.0f,    4.0f, 2.0f, 0.0f,    8.0f, 0.0f, 0.0f,
@@ -94,6 +103,7 @@ Gizmo *gizmo;
 static struct
 {
     sg_pipeline pip_triangles;
+    sg_pipeline pip_matcap;
     sg_pipeline pip_vertices;
     sg_pipeline pip_lines;
     sg_pipeline pip_idx_lines;
@@ -109,6 +119,10 @@ static struct
 
     // Buffer update flag
     bool buf_update_flag;
+    bool matcap_loaded = false;
+
+    // Image
+    uint8_t file_buffer[256*1024];
 } state;
 
 // Interaction enum
@@ -135,6 +149,7 @@ static struct
     InteractionMode mode = MODE_VIEW;
 
 } interaction;
+
 
 int closest_cp(std::vector<float> &points, HMM_Mat4 mvp)
 {
@@ -301,15 +316,21 @@ static void print_status_text(float disp_w, float disp_h)
     sdtx_canvas(disp_w *.5f , disp_h *.5f);
     sdtx_origin(disp_w *.5f , disp_h *.5f);
     sdtx_printf("Mode: view \n");
+}
 
-
-};
 
 void frame()
 {
     sg_pass pass = {};
     pass.action = state.pass_action;
     pass.swapchain = sglue_swapchain();
+
+        static int frame_count = 0;
+    if (frame_count < 10) {
+        printf("Frame %d: calling sfetch_dowork()\n", frame_count++);
+        fflush(stdout);
+    }
+    sfetch_dowork();
 
     // Calculate MVP matix
     HMM_Mat4 proj = HMM_Perspective_RH_NO(FOV, sapp_width() / sapp_height(), 0.01f, 100.0f);
@@ -345,8 +366,9 @@ void frame()
     {
     case MODE_VIEW:
         // Draw surface
-        sg_apply_pipeline(state.pip_triangles);
-        surface->render_surface(mvp);
+        sg_apply_pipeline(state.matcap_loaded ? state.pip_matcap : state.pip_triangles);
+        surface->render_surface(mvp, view, state.matcap_loaded);
+        
 
         // Display bspline
         sg_apply_pipeline(state.pip_curves);
@@ -374,8 +396,8 @@ void frame()
         break;
     case MODE_EDIT_SURFACE:
         // Draw surface
-        sg_apply_pipeline(state.pip_triangles);
-        surface->render_surface(mvp);
+        sg_apply_pipeline(state.pip_matcap);
+        surface->render_surface(mvp, view, state.matcap_loaded);
 
         // Draw surface's control points
         sg_apply_pipeline(state.pip_pts);
@@ -429,19 +451,26 @@ void event(const sapp_event *ev)
                 if (bspline->show_knots)
                 {
                     bspline->show_knots = false;
+                    state.buf_update_flag = true;
                 }
                 else
                 {
-                    state.buf_update_flag = true;
+                    state.buf_update_flag = true;                    
                     bspline->show_knots = true;
                 }
             }
             else if (ev->key_code == SAPP_KEYCODE_I)
             {
                 if (bspline->show_influence)
+                {
                     bspline->show_influence = false;
+                    state.buf_update_flag = true;
+                }
                 else
+                {
+                    state.buf_update_flag = true;
                     bspline->show_influence = true;
+                }
             }
             else if (ev->key_code == SAPP_KEYCODE_C)
             {
@@ -515,6 +544,81 @@ void event(const sapp_event *ev)
     }
 }
 
+
+
+void cleanup()
+{
+    sg_shutdown();
+    sfetch_shutdown();
+}
+
+
+static void response_callback(const sfetch_response_t* response)
+{
+    printf("=== CALLBACK FIRED ===\n");
+    printf("fetched: %d, failed: %d, finished: %d\n", 
+           response->fetched, response->failed, response->finished);
+    fflush(stdout);
+
+    if(response->fetched)
+    {
+        int png_width, png_height, num_channels;
+        const int desired_channels = 4;
+
+        const void* data = response->data.ptr;
+        size_t data_size = response->data.size;
+        
+        stbi_uc* pixels = stbi_load_from_memory(
+            (const stbi_uc*)response->data.ptr,
+            (int)response->data.size,
+            &png_width, &png_height, &num_channels, desired_channels);
+
+        printf("Pixels.size %s", (pixels) ? "yes pix": "nono");
+        fflush(stdout);
+        
+        if(pixels)
+        {
+            sg_image_desc img_desc = {};
+            img_desc.width = png_width;
+            img_desc.height = png_height;
+            img_desc.pixel_format = SG_PIXELFORMAT_RGBA8;
+            img_desc.data.mip_levels[0].ptr = pixels;
+            img_desc.data.mip_levels[0].size = (size_t)(png_width*png_height*4);
+            img_desc.label = "png_image";
+            sg_image img = sg_make_image(img_desc);
+            stbi_image_free(pixels);
+
+            sg_view_desc view_desc = {};
+            view_desc.texture.image = img;
+            view_desc.label = "png_texture_view";
+            sg_init_view(state.bind.views[VIEW_tex], view_desc);
+
+            surface->mesh_bind.views[VIEW_tex] = state.bind.views[VIEW_tex];
+            surface->mesh_bind.samplers[SMP_smp] = state.bind.samplers[SMP_smp];
+
+            state.matcap_loaded = true;
+            printf("TEXTURE LOADED - view and sampler set!\n");
+            fflush(stdout);
+        }
+    }
+    
+    if(response->failed)
+    {
+        printf("Callback fired! fetched=%d, failed=%d\n", response->fetched, response->failed);
+        fflush(stdout);
+        switch(response->error_code)
+        {
+        case SFETCH_ERROR_FILE_NOT_FOUND:
+            {
+                printf("FileNotFound");
+                fflush(stdout);
+            }
+                break;
+        }
+    }
+}
+
+// SOKOL initialize
 void init()
 {
     // Setup environment and logging function
@@ -529,14 +633,26 @@ void init()
     sdtx_desc.logger.func = slog_func;
     sdtx_setup(sdtx_desc);  
 
-    // // Setup sokol fetch
-    // sfetch_desc_t sfetch = {};
-    // sfetch.max_requests = 1;
-    // sfetch.num_channels = 1;
-    // sfetch.num_lanes = 1;
-    // sfetch.logger.func = slog_func;
-    // sfetch_setup(sfetch);
+    // Setup sokol fetch
+    sfetch_desc_t sfetch = {};
+    sfetch.max_requests = 1;
+    sfetch.num_channels = 1;
+    sfetch.num_lanes = 1;
+    sfetch.logger.func = slog_func;
+    sfetch_setup(sfetch);
     
+    state.pass_action.colors[0].load_action = SG_LOADACTION_CLEAR;
+    state.pass_action.colors[0].clear_value = {0.1f, 0.1f, 0.1f, 1.0f};
+
+    state.bind.views[VIEW_tex] = sg_alloc_view();
+
+    // Sampler object
+    sg_sampler_desc sampler_desc = {};
+    sampler_desc.min_filter = SG_FILTER_LINEAR;
+    sampler_desc.mag_filter = SG_FILTER_LINEAR;
+    sampler_desc.label = "png-sampler";
+    state.bind.samplers[SMP_smp] = sg_make_sampler(sampler_desc);
+
     // Initialize geometry
     gizmo = new Gizmo();
 
@@ -552,6 +668,7 @@ void init()
 
     // Create shader
     sg_shader shd = sg_make_shader(shd_shader_desc(sg_query_backend()));
+    sg_shader shd_mat = sg_make_shader(shd_matcap_shader_desc(sg_query_backend()));
 
     // Points pipeline
     sg_pipeline_desc pip_pts_desc = {};
@@ -593,19 +710,31 @@ void init()
     pip_desc_tri.label = "triangle_pipeline";
     state.pip_triangles = sg_make_pipeline(pip_desc_tri);
 
+    // Mesh matcap pipeline
+    sg_pipeline_desc mat_desc = {};
+    mat_desc.shader = shd_mat;
+    mat_desc.layout.attrs[ATTR_shd_matcap_pos].format = SG_VERTEXFORMAT_FLOAT3;
+    mat_desc.layout.attrs[ATTR_shd_matcap_color0].format = SG_VERTEXFORMAT_FLOAT4;
+    mat_desc.primitive_type = SG_PRIMITIVETYPE_TRIANGLES;
+    mat_desc.index_type = SG_INDEXTYPE_UINT16;
+    mat_desc.cull_mode = SG_CULLMODE_FRONT;
+    mat_desc.label = "matcap_pipleline";
+    state.pip_matcap = sg_make_pipeline(mat_desc);
+
     // Vertex pipeline
     sg_pipeline_desc pip_desc_verts = pip_desc_tri;
     pip_desc_verts.primitive_type = SG_PRIMITIVETYPE_POINTS;
     pip_desc_verts.label = "points_pipeline";
     state.pip_vertices = sg_make_pipeline(pip_desc_verts);
 
-    state.pass_action.colors[0].load_action = SG_LOADACTION_CLEAR;
-    state.pass_action.colors[0].clear_value = {0.1f, 0.1f, 0.1f, 1.0f};
-}
+    // Load PNG
+    char path_buf[512];
+    sfetch_request_t request = {};
+    request.path = "C:/Users/wTxT/Desktop/CODE/NURBS_viewer/assets/matcap_1.png";
+    request.callback = response_callback;
+    request.buffer = SFETCH_RANGE(state.file_buffer);
+    sfetch_send(request);
 
-void cleanup()
-{
-    sg_shutdown();
 }
 
 sapp_desc sokol_main(int argc, char *argv[])
