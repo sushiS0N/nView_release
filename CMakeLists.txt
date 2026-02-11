@@ -2,13 +2,34 @@ cmake_minimum_required(VERSION 4.1)
 project(nView CXX)
 set (CMAKE_CXX_STANDARD 11)
 
-add_executable(nView src/main.cpp src/camera.cpp src/gizmo.cpp src/bezier_patch.cpp src/nurbs.cpp src/shader.h)
-# add_compile_definitions(HANDMADE_MATH_USE_DEGREES)
+set(IMGUI_DIR ${CMAKE_SOURCE_DIR}/deps/imgui_docking)
+
+add_executable(nView 
+    src/main.cpp 
+    src/camera.cpp 
+    src/gizmo.cpp 
+    src/bezier_patch.cpp 
+    src/nurbs.cpp src/shader.h)
+
 # Include directories
-target_include_directories(nView PRIVATE ${CMAKE_SOURCE_DIR}/deps)
+target_include_directories(nView 
+    PRIVATE ${CMAKE_SOURCE_DIR}/deps
+    PRIVATE ${IMGUI_DIR})
 
 # Include libraries
-target_link_libraries(nView user32 gdi32 shell32 dxgi d3d11)
+target_link_libraries(nView 
+    user32 
+    gdi32 
+    shell32 
+    dxgi 
+    d3d11)
+
+target_sources(nView PRIVATE
+    ${IMGUI_DIR}/imgui.cpp
+    ${IMGUI_DIR}/imgui_draw.cpp
+    ${IMGUI_DIR}/imgui_tables.cpp
+    ${IMGUI_DIR}/imgui_widgets.cpp)
+
 
 add_custom_command(
     OUTPUT ${CMAKE_SOURCE_DIR}/src/shader.h

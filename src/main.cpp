@@ -1,6 +1,8 @@
 #define HANDMADE_MATH_IMPLEMENTATION
 #include "HandmadeMath.h"
 
+#include "imgui.h"
+
 #define SOKOL_IMPL
 #define SOKOL_GLCORE
 #define SOKOL_FETCH_IMPL
@@ -11,6 +13,7 @@
 #include "sokol_log.h"
 #include "sokol_debugtext.h"
 #include "sokol_fetch.h"
+#include "sokol_imgui.h"
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -321,15 +324,21 @@ static void print_status_text(float disp_w, float disp_h)
 
 void frame()
 {
+    simgui_frame_desc_t frame_desc = {sapp_width(), sapp_height(), sapp_frame_duration(), sapp_dpi_scale()};
+    simgui_new_frame(frame_desc);
+
+    static float f = 0.0f;
+    ImGui::SetNextWindowSize(ImVec2(200,100), ImGuiCond_FirstUseEver);
+    ImGui::Begin("Description");
+    ImGui::Text("Hello World");
+    ImGui::SliderFloat("float", &f, 0.0f, 1.0f);
+    ImGui::End();
+    ImGui::EndFrame();
+
     sg_pass pass = {};
     pass.action = state.pass_action;
     pass.swapchain = sglue_swapchain();
 
-        static int frame_count = 0;
-    if (frame_count < 10) {
-        printf("Frame %d: calling sfetch_dowork()\n", frame_count++);
-        fflush(stdout);
-    }
     sfetch_dowork();
 
     // Calculate MVP matix
@@ -343,11 +352,8 @@ void frame()
     state.current_proj = proj;
     state.current_view = view;
 
-    // HMM_Vec3 cam_pos = camera->calculate_position();
-    //     printf("Camera pos: %.2f, %.2f, %.2f\n", cam_pos.X, cam_pos.Y, cam_pos.Z);
-
     // Debugger text
-    print_status_text(sapp_widthf(), sapp_heightf());
+    //print_status_text(sapp_widthf(), sapp_heightf());
 
     if(state.buf_update_flag)
     {
@@ -357,6 +363,7 @@ void frame()
     }
 
     sg_begin_pass(pass);
+    simgui_render();
 
     // Draw axis indicator
     sg_apply_pipeline(state.pip_lines);
@@ -412,10 +419,12 @@ void frame()
     sdtx_draw();
     sg_end_pass();
     sg_commit();
+    // 
 }
 
 void event(const sapp_event *ev)
 {
+    simgui_handle_event(ev);
     // Switch modes
     if (ev->type == SAPP_EVENTTYPE_KEY_DOWN)
     {
@@ -548,18 +557,15 @@ void event(const sapp_event *ev)
 
 void cleanup()
 {
-    sg_shutdown();
+    simgui_shutdown();
     sfetch_shutdown();
+
+    sg_shutdown();
 }
 
 
 static void response_callback(const sfetch_response_t* response)
 {
-    printf("=== CALLBACK FIRED ===\n");
-    printf("fetched: %d, failed: %d, finished: %d\n", 
-           response->fetched, response->failed, response->finished);
-    fflush(stdout);
-
     if(response->fetched)
     {
         int png_width, png_height, num_channels;
@@ -573,9 +579,6 @@ static void response_callback(const sfetch_response_t* response)
             (int)response->data.size,
             &png_width, &png_height, &num_channels, desired_channels);
 
-        printf("Pixels.size %s", (pixels) ? "yes pix": "nono");
-        fflush(stdout);
-        
         if(pixels)
         {
             sg_image_desc img_desc = {};
@@ -597,8 +600,6 @@ static void response_callback(const sfetch_response_t* response)
             surface->mesh_bind.samplers[SMP_smp] = state.bind.samplers[SMP_smp];
 
             state.matcap_loaded = true;
-            printf("TEXTURE LOADED - view and sampler set!\n");
-            fflush(stdout);
         }
     }
     
@@ -735,6 +736,10 @@ void init()
     request.buffer = SFETCH_RANGE(state.file_buffer);
     sfetch_send(request);
 
+    simgui_desc_t simgui_desc = { };
+    simgui_desc.logger.func = slog_func;
+    simgui_setup(simgui_desc);
+    //ImGui::GetIO.ConfigFlags |= ImGuiConfigFlags_DockingEnable
 }
 
 sapp_desc sokol_main(int argc, char *argv[])
@@ -748,6 +753,8 @@ sapp_desc sokol_main(int argc, char *argv[])
     desc.cleanup_cb = cleanup;
     desc.event_cb = event;
     desc.window_title = "NURBS Viewer";
+    desc.enable_clipboard = true;
+    desc.logger.func = slog_func;
 
     return desc;
 }
