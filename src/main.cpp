@@ -153,6 +153,12 @@ static struct
 
 } interaction;
 
+static struct
+{
+    ImFont* title_font;
+    ImFont* body_font;
+} ui;
+
 
 int closest_cp(std::vector<float> &points, HMM_Mat4 mvp)
 {
@@ -329,9 +335,13 @@ void frame()
 
     static float f = 0.0f;
     ImGui::SetNextWindowSize(ImVec2(200,100), ImGuiCond_FirstUseEver);
-    ImGui::Begin("Description");
+    ImGui::PushFont(ui.title_font);
+    ImGui::Begin("Commands");
+    ImGui::PopFont();
+    ImGui::PushFont(ui.body_font);
     ImGui::Text("Hello World");
     ImGui::SliderFloat("float", &f, 0.0f, 1.0f);
+    ImGui::PopFont();
     ImGui::End();
     ImGui::EndFrame();
 
@@ -554,7 +564,6 @@ void event(const sapp_event *ev)
 }
 
 
-
 void cleanup()
 {
     simgui_shutdown();
@@ -731,7 +740,7 @@ void init()
     // Load PNG
     char path_buf[512];
     sfetch_request_t request = {};
-    request.path = "C:/Users/wTxT/Desktop/CODE/NURBS_viewer/assets/matcap_1.png";
+    request.path = "../../assets/matcap_1.png";
     request.callback = response_callback;
     request.buffer = SFETCH_RANGE(state.file_buffer);
     sfetch_send(request);
@@ -740,6 +749,16 @@ void init()
     simgui_desc.logger.func = slog_func;
     simgui_setup(simgui_desc);
     //ImGui::GetIO.ConfigFlags |= ImGuiConfigFlags_DockingEnable
+
+    auto& io{ ImGui::GetIO() };
+    io.IniFilename = nullptr;
+    io.LogFilename = nullptr;
+    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
+    ui.title_font = io.Fonts->AddFontFromFileTTF("../../assets/Oswald-Bold.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesDefault()); 
+    IM_ASSERT(ui.title_font != NULL);
+    ui.body_font = io.Fonts->AddFontFromFileTTF("../../assets/Oswald-Regular.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesDefault());
+    IM_ASSERT(ui.body_font  != NULL);
+
 }
 
 sapp_desc sokol_main(int argc, char *argv[])
