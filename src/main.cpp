@@ -771,7 +771,7 @@ void init()
     // Load PNG
     char path_buf[512];
     sfetch_request_t request = {};
-    request.path = "../../assets/matcap_1.png";
+    request.path = "../../assets/matcap_2.png";
     request.callback = response_callback;
     request.buffer = SFETCH_RANGE(state.file_buffer);
     sfetch_send(request);

@@ -73,7 +73,7 @@ HMM_Mat4 Camera::get_view_matrix() const
 void Camera::reset()
 {
     target = HMM_V3(0, 0, 0);
-    distance = 20.0f;
+    distance = 30.0f;
     yaw = 45.0f;
     pitch = 30.0f;
 }
@@ -82,7 +82,7 @@ void Camera::handle_events(const sapp_event *ev)
 {
     switch (ev->type)
     {
-    case SAPP_KEYCODE_DOWN:
+    case SAPP_EVENTTYPE_KEY_DOWN:
         if (ev->key_code == SAPP_KEYCODE_F)
         {
             reset();
