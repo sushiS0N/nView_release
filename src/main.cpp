@@ -153,12 +153,7 @@ static struct
 
 } interaction;
 
-static struct
-{
-    ImFont* title_font;
-    ImFont* body_font;
-} ui;
-
+static ImFont* ui_font = nullptr;
 
 int closest_cp(std::vector<float> &points, HMM_Mat4 mvp)
 {
@@ -327,23 +322,60 @@ static void print_status_text(float disp_w, float disp_h)
     sdtx_printf("Mode: view \n");
 }
 
+// UI
+static void render_ui()
+{
+    ImGui::SetNextWindowPos(ImVec2(10,10), ImGuiCond_Always);
+    ImGui::SetNextWindowSize(ImVec2(250,200), ImGuiCond_FirstUseEver);
+    ImGui::PushFont(ui_font);
+    ImGui::Begin("Menu", nullptr, ImGuiWindowFlags_NoMove);
+
+    // Mode buttons
+    ImVec2 button_size(ImGui::GetContentRegionAvail().x / 3.0f - 4.0f,0);
+    if(ImGui::Button("View", button_size)) interaction.mode = MODE_VIEW;
+    ImGui::SameLine();
+    if(ImGui::Button("Curve", button_size)) interaction.mode = MODE_EDIT_CURVE;
+    ImGui::SameLine();
+    if(ImGui::Button("Surface", button_size)) interaction.mode = MODE_EDIT_SURFACE;
+
+    ImGui::Separator();
+    switch (interaction.mode)
+    {
+    case MODE_VIEW:
+        ImGui::Text("RMB and scroll to orbit and zoom");
+        break;
+    case MODE_EDIT_CURVE:
+        if(ImGui::Checkbox("Display Knots - k", &bspline->show_knots))
+        {
+            state.buf_update_flag = true;
+        }
+        if(ImGui::Checkbox("Display CP Influence - i", &bspline->show_influence))
+        {
+            state.buf_update_flag = true;
+        }
+        ImGui::Checkbox("Add points - c", &interaction.add_pts);
+        if(ImGui::Button("Reset"))
+        {
+            bspline = new NURBS_spline(bsp, 3, 1000);
+            bspline->generate(0);
+            state.buf_update_flag = true;
+        }
+        
+        break;
+    case MODE_EDIT_SURFACE:
+        ImGui::Text("RMB + scroll - orbit and zoom");
+        ImGui::Text("LMB - drag points");
+        break;
+    }
+    ImGui::PopFont();
+    ImGui::End();
+}
 
 void frame()
 {
-    simgui_frame_desc_t frame_desc = {sapp_width(), sapp_height(), sapp_frame_duration(), sapp_dpi_scale()};
+    simgui_frame_desc_t frame_desc = {sapp_width(), sapp_height(), sapp_frame_duration(), 1.0};
     simgui_new_frame(frame_desc);
-
-    static float f = 0.0f;
-    ImGui::SetNextWindowSize(ImVec2(200,100), ImGuiCond_FirstUseEver);
-    ImGui::PushFont(ui.title_font);
-    ImGui::Begin("Commands");
-    ImGui::PopFont();
-    ImGui::PushFont(ui.body_font);
-    ImGui::Text("Hello World");
-    ImGui::SliderFloat("float", &f, 0.0f, 1.0f);
-    ImGui::PopFont();
-    ImGui::End();
-    ImGui::EndFrame();
+    render_ui();
 
     sg_pass pass = {};
     pass.action = state.pass_action;
@@ -385,7 +417,6 @@ void frame()
         // Draw surface
         sg_apply_pipeline(state.matcap_loaded ? state.pip_matcap : state.pip_triangles);
         surface->render_surface(mvp, view, state.matcap_loaded);
-        
 
         // Display bspline
         sg_apply_pipeline(state.pip_curves);
@@ -745,20 +776,30 @@ void init()
     request.buffer = SFETCH_RANGE(state.file_buffer);
     sfetch_send(request);
 
+    // ImGUI setup
     simgui_desc_t simgui_desc = { };
     simgui_desc.logger.func = slog_func;
     simgui_setup(simgui_desc);
-    //ImGui::GetIO.ConfigFlags |= ImGuiConfigFlags_DockingEnable
 
-    auto& io{ ImGui::GetIO() };
-    io.IniFilename = nullptr;
-    io.LogFilename = nullptr;
-    io.ConfigFlags |= ImGuiConfigFlags_NoMouseCursorChange;
-    ui.title_font = io.Fonts->AddFontFromFileTTF("../../assets/Oswald-Bold.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesDefault()); 
-    IM_ASSERT(ui.title_font != NULL);
-    ui.body_font = io.Fonts->AddFontFromFileTTF("../../assets/Oswald-Regular.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesDefault());
-    IM_ASSERT(ui.body_font  != NULL);
+    // Font
+    ImGuiIO& io = ImGui::GetIO();
+    ImFontConfig font_cfg;
+    font_cfg.OversampleH = 2;
+    font_cfg.OversampleV = 2;
+    font_cfg.PixelSnapH = true;
+    ui_font = io.Fonts->AddFontFromFileTTF("../../assets/Ubuntu-Medium.ttf", 14.0f, &font_cfg);      
 
+    // Overall Style
+    ImGuiStyle& style = ImGui::GetStyle();
+    style.WindowRounding = 5.0f;
+    style.FrameRounding = 3.0f;
+    style.GrabRounding = 3.0f;
+    style.FramePadding = ImVec2(8,4);
+    style.ItemSpacing = ImVec2(8, 6);
+    //Buttons
+    //style.Colors[ImGuiCol_Button] = ImVec4(0.8f,0.2f,0.2f,1.0f);
+    style.Colors[ImGuiCol_ButtonHovered] = ImVec4(0.1f,0.4f,0.6f,1.0f);
+    style.Colors[ImGuiCol_ButtonActive] = ImVec4(0.1f,0.1f,0.1f,1.0f);
 }
 
 sapp_desc sokol_main(int argc, char *argv[])
@@ -777,3 +818,5 @@ sapp_desc sokol_main(int argc, char *argv[])
 
     return desc;
 }
+
+
