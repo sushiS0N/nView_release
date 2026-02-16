@@ -8,7 +8,6 @@ add_executable(nView
     src/main.cpp 
     src/camera.cpp 
     src/gizmo.cpp 
-    src/bezier_patch.cpp 
     src/nurbs.cpp src/shader.h)
 
 # Include directories

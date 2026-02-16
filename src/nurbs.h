@@ -11,7 +11,7 @@ class NURBS_spline
         bool show_influence, show_knots;
         
         NURBS_spline(std::vector<float> cp, int degree, int num_pts, std::vector<float> knots={}, std::vector<float> weights_in={});
-
+    
         // Geometry
         void update_cp(int index, HMM_Vec3 new_pos);
         void generate(int selected_idx = -1);
@@ -22,6 +22,8 @@ class NURBS_spline
         void render_spline(const HMM_Mat4 &mvp);
         void render_control_points(const HMM_Mat4 &mvp);
         void render_knots(const HMM_Mat4 &mvp);
+
+        ~NURBS_spline();
 
 
     private:
@@ -34,6 +36,7 @@ class NURBS_spline
         void calc_weighted_pts();
         void calc_knots();
         void create_buffers();
+
 };
 
 
@@ -54,9 +57,12 @@ class NURBS_surface
         void render_control_points(const HMM_Mat4 &mvp);
         void render_control_polygon(const HMM_Mat4 &mvp);
 
+        ~NURBS_surface();
+
+
 
     private:
-        sg_buffer control_pts_buf, mesh_vtx_buf, mesh_idx_buf, ctrl_poly_buf, ctrl_poly_idx_buf;
+        sg_buffer control_pts_buf, mesh_vtx_buf, mesh_idx_buf, ctrl_poly_idx_buf;
         sg_bindings scp_bind, ctrl_poly_bind;
         std::vector<float> color_cp, mesh_verts, ctrl_poly, u_knots, v_knots, weights, weighted_points, u_basis_funs, v_basis_funs;
         std::vector<uint16_t> indices, ctrl_indices;

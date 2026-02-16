@@ -374,8 +374,17 @@ void NURBS_spline::render_knots(const HMM_Mat4 &mvp)
     sg_draw(0, knots_markers.size()/7, 1);
 }
 
-//////////////////////////////////
-///// NURBS Surface functions /////
+NURBS_spline::~NURBS_spline()
+{
+    sg_destroy_buffer(crv_vtx_buf);
+    sg_destroy_buffer(control_pts_buf);
+    sg_destroy_buffer(control_pts_buf);
+    sg_destroy_buffer(knots_buf);
+    
+}
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+///// NURBS Surface functions ////////////////////////////////////////////////////////////////////////
 void NURBS_surface::create_buffers()
 {
     // Create vertex buffer
@@ -707,4 +716,12 @@ void NURBS_surface::render_control_polygon(const HMM_Mat4 &mvp)
 
     sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, ctrl_indices.size(), 1);
+}
+
+NURBS_surface::~NURBS_surface()
+{
+    sg_destroy_buffer(control_pts_buf);
+    sg_destroy_buffer(mesh_vtx_buf);
+    sg_destroy_buffer(mesh_idx_buf);
+    sg_destroy_buffer(ctrl_poly_idx_buf);
 }

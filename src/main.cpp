@@ -23,7 +23,6 @@
 #include <cmath>
 
 #include "shader.h"
-#include "bezier_patch.h"
 #include "camera.h"
 #include "gizmo.h"
 #include "nurbs.h"
@@ -66,28 +65,6 @@ std::vector<float> srf_weights = {
 
 NURBS_surface* surface;
 
-// Bezier patch
-float bez_cp[48] = {
-    // Row 0 (X = 0)
-    0.0f, 5.0f, 0.0f,    0.0f, 0.0f, 2.0f,    0.0f, 0.0f, 4.0f,    0.0f, 0.0f, 6.0f,
-    // Row 1 (X = 2)  
-    2.0f, 0.0f, 0.0f,    2.0f, 0.0f, 2.0f,    2.0f, 0.0f, 4.0f,    2.0f, 0.0f, 6.0f,
-    // Row 2 (X = 4)
-    4.0f, 0.0f, 0.0f,    4.0f, 0.0f, 2.0f,    4.0f, 5.0f, 4.0f,    4.0f, 0.0f, 6.0f,
-    // Row 3 (X = 6)
-    6.0f, 5.0f, 0.0f,    6.0f, 0.0f, 2.0f,    6.0f, 0.0f, 4.0f,    6.0f, 0.0f, 6.0f
-};
-BezierPatch *bez_patch = new BezierPatch(bez_cp, 10);
-
-// NURBS - spline
-// std::vector<float> bsp={
-//     0.0f, 0.0f, 0.0f, // P0
-//     6.0f, 0.0f, 0.0f, // P1 
-//     8.0f, 0.0f, 6.0f, // P2
-//     0.0f, 0.0f, 4.0f, // P3
-//     2.0f, 0.0f, 2.0f,  // P4
-//     3.0f, 0.0f, 4.0f  // P5
-// };
 std::vector<float> bsp={
     0.0f, 0.0f, 7.0f, // P0
     3.0f, 0.0f, 4.0f, // P1 
@@ -356,6 +333,7 @@ static void render_ui()
         ImGui::Checkbox("Add points - c", &interaction.add_pts);
         if(ImGui::Button("Reset"))
         {
+            delete bspline;
             bspline = new NURBS_spline(bsp, 3, 1000);
             bspline->generate(0);
             state.buf_update_flag = true;
@@ -365,6 +343,19 @@ static void render_ui()
     case MODE_EDIT_SURFACE:
         ImGui::Text("RMB + scroll - orbit and zoom");
         ImGui::Text("LMB - drag points");
+        if (ImGui::Button("Reset"))
+        {
+            delete surface;
+            surface = new NURBS_surface(srf_cp, u_knots, v_knots, 3, 4, 4, 20, srf_weights);
+            surface->generate_mesh();
+
+            if (state.matcap_loaded)
+            {
+                surface->mesh_bind.views[VIEW_tex] = state.bind.views[VIEW_tex];
+                surface->mesh_bind.samplers[SMP_smp] = state.bind.samplers[SMP_smp];
+            }
+            state.buf_update_flag = true;
+        }
         break;
     }
     ImGui::PopFont();
@@ -771,7 +762,7 @@ void init()
     // Load PNG
     char path_buf[512];
     sfetch_request_t request = {};
-    request.path = "../../assets/matcap_2.png";
+    request.path = "../../assets/matcap_1.png";
     request.callback = response_callback;
     request.buffer = SFETCH_RANGE(state.file_buffer);
     sfetch_send(request);
