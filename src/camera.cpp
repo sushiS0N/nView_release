@@ -23,6 +23,20 @@ Camera::Camera(HMM_Vec3 target, float distance, float yaw, float pitch)
     this->distance = distance;
     this->yaw = yaw;
     this->pitch = pitch;
+    panning = false;
+}
+
+void Camera::pan(float dx, float dy)
+{
+    HMM_Mat4 view = get_view_matrix();
+    HMM_Vec3 cam_right = HMM_V3(view[0][0],view[1][0],view[2][0]);
+    HMM_Vec3 cam_up = HMM_V3(view[0][1],view[1][1],view[2][1]);
+
+    float speed = distance * 0.005f;
+    dx *= speed;
+    dy *= speed;
+    HMM_Vec3 pan_delta = HMM_MulV3F(cam_right, dx) + HMM_MulV3F(cam_up, dy);
+    target = HMM_AddV3(target, pan_delta);
 }
 
 // Orbit - change yaw and pitch
@@ -80,12 +94,23 @@ void Camera::reset()
 
 void Camera::handle_events(const sapp_event *ev)
 {
+    
     switch (ev->type)
     {
     case SAPP_EVENTTYPE_KEY_DOWN:
         if (ev->key_code == SAPP_KEYCODE_F)
         {
             reset();
+        }
+        if (ev->key_code == SAPP_KEYCODE_LEFT_SHIFT)
+        {
+            panning = true;
+        }
+        break;
+    case SAPP_EVENTTYPE_KEY_UP:
+        if (ev->key_code == SAPP_KEYCODE_LEFT_SHIFT)
+        {
+            panning = false;
         }
         break;
     case SAPP_EVENTTYPE_MOUSE_DOWN:
@@ -99,13 +124,21 @@ void Camera::handle_events(const sapp_event *ev)
         {
             sapp_lock_mouse(false);
         }
+        if (ev->mouse_button == SAPP_MOUSEBUTTON_MIDDLE)
+        {
+            sapp_lock_mouse(false);
+        }
         break;
     case SAPP_EVENTTYPE_MOUSE_SCROLL:
         zoom(ev->scroll_y * -0.5f);
         break;
 
     case SAPP_EVENTTYPE_MOUSE_MOVE:
-        if (sapp_mouse_locked())
+        if (sapp_mouse_locked() && panning)
+        {
+            pan(ev->mouse_dx * -0.25f, ev->mouse_dy * 0.25f);
+        }
+        else if (sapp_mouse_locked())
         {
             orbit(ev->mouse_dx * -0.25f, ev->mouse_dy * 0.25f);
         }

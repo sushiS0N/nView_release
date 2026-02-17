@@ -132,6 +132,8 @@ static struct
 
 static ImFont* ui_font = nullptr;
 
+// Utils
+
 int closest_cp(std::vector<float> &points, HMM_Mat4 mvp)
 {
     int pt_idx = 0;
@@ -243,7 +245,6 @@ void move_srf_pt(int cp_idx, HMM_Vec3 ray_dir, HMM_Vec3 camera_pos)
     surface->update_srf_cp(cp_idx, pos_XZ);
 }
 
-// Loggin functions
 void update_mouse_pos(const sapp_event *ev)
 {
     // Screen coordinates
@@ -264,6 +265,7 @@ void update_mouse_pos(const sapp_event *ev)
     interaction.ndc_y = ndc_y; 
 }
 
+// Loggin functions
 static void print_status_text(float disp_w, float disp_h)
 {
     sdtx_canvas(disp_w *.5f , disp_h *.5f);
@@ -590,7 +592,6 @@ void cleanup()
 {
     simgui_shutdown();
     sfetch_shutdown();
-
     sg_shutdown();
 }
 

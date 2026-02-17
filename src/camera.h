@@ -10,6 +10,7 @@ public:
 
     void orbit(float delta_yaw, float delta_pitch);
     void zoom(float delta_distance);
+    void pan(float dx, float dy);
     void handle_events(const sapp_event *ev);
     void reset();
 
@@ -20,4 +21,5 @@ private:
     float distance;
     float yaw;
     float pitch;
+    bool panning;
 };
