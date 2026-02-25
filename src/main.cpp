@@ -74,7 +74,7 @@ std::vector<float> bsp={
 NURBS_spline *bspline;
 
 // Camera
-Camera *camera = new Camera(HMM_V3(0, 0, 0), 30.0f, 45.0f, 30.0f);
+Camera *camera = new Camera(HMM_V3(0, 0, 0), 30.0f, 45.0f, 30.0f, RESOLUTION_X, RESOLUTION_Y);
 
 // Utils
 Gizmo *gizmo;
@@ -321,7 +321,10 @@ static void render_ui()
     switch (interaction.mode)
     {
     case MODE_VIEW:
-        ImGui::Text("RMB and scroll to orbit and zoom");
+        ImGui::Text("RMB - orbit\n");
+        ImGui::Text("Scroll - zoom\n");
+        ImGui::Text("Shift + RMB - pan\n");
+
         break;
     case MODE_EDIT_CURVE:
         if(ImGui::Checkbox("Display Knots - k", &bspline->show_knots))
@@ -763,7 +766,7 @@ void init()
     // Load PNG
     char path_buf[512];
     sfetch_request_t request = {};
-    request.path = "../../assets/matcap_1.png";
+    request.path = "../../assets/matcap_2.png";
     request.callback = response_callback;
     request.buffer = SFETCH_RANGE(state.file_buffer);
     sfetch_send(request);

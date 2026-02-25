@@ -17,13 +17,17 @@ HMM_Vec3 Camera::calculate_position() const
 }
 
 // Constructor - initialize camera state
-Camera::Camera(HMM_Vec3 target, float distance, float yaw, float pitch)
+Camera::Camera(HMM_Vec3 target, float distance, float yaw, float pitch, float res_width, float res_height)
 {
     this->target = target;
     this->distance = distance;
     this->yaw = yaw;
     this->pitch = pitch;
-    panning = false;
+
+    // sensitivity
+    pan_sens = .02f;
+    orbit_sens = 0.25f;
+    zoom_sens = 0.5f;
 }
 
 void Camera::pan(float dx, float dy)
@@ -32,9 +36,8 @@ void Camera::pan(float dx, float dy)
     HMM_Vec3 cam_right = HMM_V3(view[0][0],view[1][0],view[2][0]);
     HMM_Vec3 cam_up = HMM_V3(view[0][1],view[1][1],view[2][1]);
 
-    float speed = distance * 0.005f;
-    dx *= speed;
-    dy *= speed;
+    dx *= -pan_sens;
+    dy *= pan_sens;
     HMM_Vec3 pan_delta = HMM_MulV3F(cam_right, dx) + HMM_MulV3F(cam_up, dy);
     target = HMM_AddV3(target, pan_delta);
 }
@@ -42,8 +45,8 @@ void Camera::pan(float dx, float dy)
 // Orbit - change yaw and pitch
 void Camera::orbit(float delta_yaw, float delta_pitch)
 {
-    yaw += delta_yaw;
-    pitch += delta_pitch;
+    yaw += delta_yaw * - orbit_sens;
+    pitch += delta_pitch * orbit_sens;
 
     if (pitch > 89.0f) pitch = 89.0f;
     if (pitch < -89.0f) pitch = -89.0f;
@@ -61,7 +64,7 @@ void Camera::orbit(float delta_yaw, float delta_pitch)
 // Zoom - change distance
 void Camera::zoom(float delta_distance)
 {
-    this->distance += delta_distance;
+    distance += delta_distance * -zoom_sens;
 
     // Clamp distance
     if (distance < 0.01f)
@@ -102,45 +105,33 @@ void Camera::handle_events(const sapp_event *ev)
         {
             reset();
         }
-        if (ev->key_code == SAPP_KEYCODE_LEFT_SHIFT)
-        {
-            panning = true;
-        }
         break;
     case SAPP_EVENTTYPE_KEY_UP:
-        if (ev->key_code == SAPP_KEYCODE_LEFT_SHIFT)
-        {
-            panning = false;
-        }
         break;
+    
     case SAPP_EVENTTYPE_MOUSE_DOWN:
-        if (ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
-        {
+        if(ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
             sapp_lock_mouse(true);
-        }
         break;
+
     case SAPP_EVENTTYPE_MOUSE_UP:
-        if (ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
-        {
+        if(ev->mouse_button == SAPP_MOUSEBUTTON_RIGHT)
             sapp_lock_mouse(false);
-        }
-        if (ev->mouse_button == SAPP_MOUSEBUTTON_MIDDLE)
-        {
-            sapp_lock_mouse(false);
-        }
         break;
+
+
     case SAPP_EVENTTYPE_MOUSE_SCROLL:
-        zoom(ev->scroll_y * -0.5f);
+        zoom(ev->scroll_y);
         break;
 
     case SAPP_EVENTTYPE_MOUSE_MOVE:
-        if (sapp_mouse_locked() && panning)
+        if (sapp_mouse_locked() && ev->modifiers & SAPP_MODIFIER_SHIFT)
         {
-            pan(ev->mouse_dx * -0.25f, ev->mouse_dy * 0.25f);
+            pan(ev->mouse_dx, ev->mouse_dy);
         }
         else if (sapp_mouse_locked())
         {
-            orbit(ev->mouse_dx * -0.25f, ev->mouse_dy * 0.25f);
+            orbit(ev->mouse_dx, ev->mouse_dy);
         }
         break;
     }
