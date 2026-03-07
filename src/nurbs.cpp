@@ -10,7 +10,7 @@
 #include "nurbs.h"
 
 ///// Utility functions /////
-std::vector<float> colour_points(std::vector<float> control_points, float r, float g, float b, float a)
+std::vector<float> colour_points(const std::vector<float> &control_points, float r, float g, float b, float a)
 {
     int cp_size = control_points.size()/3;
     std::vector<float> colored_cp(cp_size * 7, 0.0f);
@@ -37,7 +37,7 @@ std::vector<float> colour_points(std::vector<float> control_points, float r, flo
 }
 
 
-int find_span(float u, int n, int p, std::vector<float> knot_vector)
+int find_span(float u, int n, int p, const std::vector<float> &knot_vector)
 {
     int knot_index = n + 1;
     if (u == knot_vector[n + 1])
@@ -59,7 +59,7 @@ int find_span(float u, int n, int p, std::vector<float> knot_vector)
     return mid;
 }
 
-void compute_basis_funs(float u, int i, int p, std::vector<float> &basis_funs, std::vector<float> &knot_vector)
+void compute_basis_funs(float u, int i, int p, std::vector<float> &basis_funs, const std::vector<float> &knot_vector)
 {
     basis_funs.resize(p + 1, 0.0f); 
     basis_funs[0] = 1.0;
@@ -256,6 +256,9 @@ void NURBS_spline::add_cp(HMM_Vec3 new_pos)
     calc_weighted_pts();
 
     // Rebuild buffers
+    sg_destroy_buffer(crv_vtx_buf);
+    sg_destroy_buffer(control_pts_buf);
+    sg_destroy_buffer(knots_buf);
     create_buffers();
 
     // Generate curve
@@ -331,7 +334,7 @@ void NURBS_spline::update_buffer()
     }
 }
 
-void NURBS_spline::render_spline(const HMM_Mat4 &mvp)
+void NURBS_spline::render_spline(const HMM_Mat4 &mvp) const
 {
     sg_apply_bindings(crv_bind);
 
@@ -345,7 +348,7 @@ void NURBS_spline::render_spline(const HMM_Mat4 &mvp)
     sg_draw(0, this->num_pts + 1, 1);
 }
 
-void NURBS_spline::render_control_points(const HMM_Mat4 &mvp)
+void NURBS_spline::render_control_points(const HMM_Mat4 &mvp) const
 {
     sg_apply_bindings(cp_bind);
 
@@ -360,7 +363,7 @@ void NURBS_spline::render_control_points(const HMM_Mat4 &mvp)
     sg_draw(0, n + 1, 1);
 }
 
-void NURBS_spline::render_knots(const HMM_Mat4 &mvp)
+void NURBS_spline::render_knots(const HMM_Mat4 &mvp) const
 {
     sg_apply_bindings(knots_bind);
 
@@ -378,10 +381,9 @@ NURBS_spline::~NURBS_spline()
 {
     sg_destroy_buffer(crv_vtx_buf);
     sg_destroy_buffer(control_pts_buf);
-    sg_destroy_buffer(control_pts_buf);
     sg_destroy_buffer(knots_buf);
-    
 }
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 ///// NURBS Surface functions ////////////////////////////////////////////////////////////////////////
@@ -474,22 +476,48 @@ void NURBS_surface::create_buffers()
 NURBS_surface::NURBS_surface(std::vector<float> cp, std::vector<float> u_knot_vector, std::vector<float> v_knot_vector, 
                             int degree, int u_num, int v_num, int res, std::vector<float> weights_in)
 {
+    assert(u_knot_vector.size() == (u_num - 1 + degree + 2) && "Incorrect u knot size");
+    assert(v_knot_vector.size() == (v_num - 1 + degree + 2) && "Incorrect v knot size");
+
+    u_num_pts = u_num;
+    v_num_pts = v_num;
+    num_pts = u_num_pts * v_num_pts;
+    resolution = res;
+
+    n = u_num_pts - 1;  // last index in u direction
+    m = v_num_pts - 1;  // last index in v direction
+
+    p = degree;         // degree in u direction
+    q = degree;         // degree in v direction
+
+    num_indices = resolution*resolution*6;
+
+    int num_verts = (resolution+1)*(resolution+1);
+    mesh_verts.resize(num_verts * 7, 0.0f);
+
+    // Control points
+    assert(cp.size()>=0 && "Control points are empty");
     control_points = std::move(cp);
+
+    // Validate knot vectors(non-decreasing)
+    for (size_t i = 1; i < u_knot_vector.size(); i++)
+    {
+        assert(u_knot_vector[i] >= u_knot_vector[i - 1] && "u knot vector must be non-decreasing");
+    }
+    for (size_t i = 1; i < v_knots.size(); i++)
+    {
+        assert(v_knot_vector[i] >= v_knot_vector[i - 1] && "v knot vector must be non-decreasing");
+    }
+
     u_knots = std::move(u_knot_vector);
     v_knots = std::move(v_knot_vector);
 
-
+    // Weights check and generate if empty
     if(weights_in.empty())
     {
         this->weights.resize(control_points.size()/3, 1.0f);
     }
     else this->weights = std::move(weights_in);
-
-    // Validate knot vector is non-decreasing
-    for (size_t i = 1; i < u_knots.size(); i++)
-    {
-        assert(u_knots[i] >= u_knots[i - 1] && "Knot vector must be non-decreasing");
-    }
 
     // Create the 4D homogeneous control points array
     weighted_points.resize(control_points.size()/3*4, 0.0f);
@@ -503,23 +531,6 @@ NURBS_surface::NURBS_surface(std::vector<float> cp, std::vector<float> u_knot_ve
         weighted_points[wp_idx+2] = control_points[cp_idx+2]*this->weights[i];
         weighted_points[wp_idx+3] = this->weights[i];
     }
-
-    u_num_pts = u_num;
-    v_num_pts = v_num;
-    num_pts = u_num_pts * v_num_pts;
-    resolution = res;
-
-
-    n = u_num_pts - 1;  // last index in u direction
-    m = v_num_pts - 1;  // last index in v direction
-
-    p = degree;         // degree in u direction
-    q = degree;         // degree in v direction
-
-    num_indices = resolution*resolution*6;
-
-    int num_verts = (resolution+1)*(resolution+1);
-    mesh_verts.resize(num_verts * 7, 0.0f);
 
     create_buffers();
     color_cp = std::move(colour_points(control_points, 0.5f,0.2f,0.9f,1.0f));
@@ -666,7 +677,7 @@ void NURBS_surface::update_buffer()
     sg_update_buffer(control_pts_buf, sg_range{color_cp.data(), color_cp.size() * sizeof(float)});
 }
 
-void NURBS_surface::render_surface(const HMM_Mat4 &mvp, const HMM_Mat4 &view, bool matcap_loaded)
+void NURBS_surface::render_surface(const HMM_Mat4 &mvp, const HMM_Mat4 &view, bool matcap_loaded) const
 {
     sg_apply_bindings(mesh_bind);
 
@@ -690,7 +701,7 @@ void NURBS_surface::render_surface(const HMM_Mat4 &mvp, const HMM_Mat4 &view, bo
     sg_draw(0, num_indices, 1);
 }
 
-void NURBS_surface::render_control_points(const HMM_Mat4 &mvp)
+void NURBS_surface::render_control_points(const HMM_Mat4 &mvp) const
 {
     sg_apply_bindings(scp_bind);
 
@@ -704,7 +715,7 @@ void NURBS_surface::render_control_points(const HMM_Mat4 &mvp)
     sg_draw(0, control_points.size()/3, 1);
 }
 
-void NURBS_surface::render_control_polygon(const HMM_Mat4 &mvp)
+void NURBS_surface::render_control_polygon(const HMM_Mat4 &mvp) const
 {
     sg_apply_bindings(ctrl_poly_bind);
 

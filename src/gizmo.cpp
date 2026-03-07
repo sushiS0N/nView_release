@@ -65,3 +65,8 @@ void Gizmo::render_axis_indicator(const HMM_Mat4 &mvp)
     
     sg_draw(0, 6, 1);
 }
+
+Gizmo::~Gizmo()
+{
+    sg_destroy_buffer(axis_gizmo_buffer);
+}

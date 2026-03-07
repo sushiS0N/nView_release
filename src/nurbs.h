@@ -19,9 +19,9 @@ class NURBS_spline
 
         // Rendering
         void update_buffer();
-        void render_spline(const HMM_Mat4 &mvp);
-        void render_control_points(const HMM_Mat4 &mvp);
-        void render_knots(const HMM_Mat4 &mvp);
+        void render_spline(const HMM_Mat4 &mvp) const;
+        void render_control_points(const HMM_Mat4 &mvp) const;
+        void render_knots(const HMM_Mat4 &mvp) const;
 
         ~NURBS_spline();
 
@@ -53,9 +53,10 @@ class NURBS_surface
         void generate_mesh();
         void update_srf_cp(int index, HMM_Vec3 new_pos);
         void update_buffer();
-        void render_surface(const HMM_Mat4 &mvp, const HMM_Mat4 &view, bool matcap_loaded);
-        void render_control_points(const HMM_Mat4 &mvp);
-        void render_control_polygon(const HMM_Mat4 &mvp);
+
+        void render_surface(const HMM_Mat4 &mvp, const HMM_Mat4 &view, bool matcap_loaded) const;
+        void render_control_points(const HMM_Mat4 &mvp) const;
+        void render_control_polygon(const HMM_Mat4 &mvp) const;
 
         ~NURBS_surface();
 

@@ -5,6 +5,7 @@ class Gizmo
 {
 public:
     Gizmo();
+    ~Gizmo();
 
     // Axis indicator
     void render_axis_indicator(const HMM_Mat4& mvp);

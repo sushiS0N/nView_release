@@ -21,6 +21,7 @@
 #include "stdio.h"
 #include <vector>
 #include <cmath>
+#include <memory>
 
 #include "shader.h"
 #include "camera.h"
@@ -63,21 +64,23 @@ std::vector<float> srf_weights = {
     1.0f, 1.0f, 1.0f, 1.0f
 };
 
-NURBS_surface* surface;
-
 std::vector<float> bsp={
     0.0f, 0.0f, 7.0f, // P0
     3.0f, 0.0f, 4.0f, // P1 
     6.0f, 0.0f, 12.0f, // P2
     8.0f, 0.0f, 7.0f, // P3
 };
-NURBS_spline *bspline;
 
+// Scene objects
 // Camera
-Camera *camera = new Camera(HMM_V3(0, 0, 0), 30.0f, 45.0f, 30.0f, RESOLUTION_X, RESOLUTION_Y);
+auto camera = std::make_unique<Camera>(HMM_V3(0, 0, 0), 30.0f, 45.0f, 30.0f, RESOLUTION_X, RESOLUTION_Y);
+// Gizmo
+std::unique_ptr<Gizmo> gizmo;
 
-// Utils
-Gizmo *gizmo;
+// Geometry objects
+// Create objects
+std::unique_ptr<NURBS_spline> bspline;
+std::unique_ptr<NURBS_surface> surface;
 
 // Sokol struct
 static struct
@@ -308,6 +311,9 @@ static void render_ui()
     ImGui::SetNextWindowSize(ImVec2(250,200), ImGuiCond_FirstUseEver);
     ImGui::PushFont(ui_font);
     ImGui::Begin("Menu", nullptr, ImGuiWindowFlags_NoMove);
+    ImGui::Text("Application average %.3f ms/frame \n (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+
+    
 
     // Mode buttons
     ImVec2 button_size(ImGui::GetContentRegionAvail().x / 3.0f - 4.0f,0);
@@ -338,8 +344,7 @@ static void render_ui()
         ImGui::Checkbox("Add points - c", &interaction.add_pts);
         if(ImGui::Button("Reset"))
         {
-            delete bspline;
-            bspline = new NURBS_spline(bsp, 3, 1000);
+            bspline = std::make_unique<NURBS_spline>(bsp, 3, 1000);
             bspline->generate(0);
             state.buf_update_flag = true;
         }
@@ -350,8 +355,7 @@ static void render_ui()
         ImGui::Text("LMB - drag points");
         if (ImGui::Button("Reset"))
         {
-            delete surface;
-            surface = new NURBS_surface(srf_cp, u_knots, v_knots, 3, 4, 4, 20, srf_weights);
+            surface = std::make_unique<NURBS_surface>(srf_cp, u_knots, v_knots, 3, 4, 4, 20, srf_weights);
             surface->generate_mesh();
 
             if (state.matcap_loaded)
@@ -363,6 +367,8 @@ static void render_ui()
         }
         break;
     }
+
+    
     ImGui::PopFont();
     ImGui::End();
 }
@@ -593,6 +599,13 @@ void event(const sapp_event *ev)
 
 void cleanup()
 {
+    // Cleanup geo and scene
+    camera.reset();
+    gizmo.reset();
+    bspline.reset();
+    surface.reset();
+
+    // Cleanup SOKOL
     simgui_shutdown();
     sfetch_shutdown();
     sg_shutdown();
@@ -690,15 +703,15 @@ void init()
     state.bind.samplers[SMP_smp] = sg_make_sampler(sampler_desc);
 
     // Initialize geometry
-    gizmo = new Gizmo();
+    gizmo = std::make_unique<Gizmo>();
 
     // NURBS spline
-    bspline = new NURBS_spline(bsp, 3, 1000);
+    bspline = std::make_unique<NURBS_spline>(bsp, 3, 1000);
     bspline->generate(0);
     state.buf_update_flag = true;
 
     // NURBS surface
-    surface = new NURBS_surface(srf_cp, u_knots, v_knots, 3, 4, 4, 20, srf_weights);
+    surface = std::make_unique<NURBS_surface>(srf_cp, u_knots, v_knots, 3, 4, 4, 20, srf_weights);
     surface->generate_mesh();
     state.buf_update_flag = true;
 
