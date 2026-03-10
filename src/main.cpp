@@ -28,7 +28,7 @@
 #include "gizmo.h"
 #include "nurbs.h"
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-// + ADD PAN + live weight edit
+// + ADD live weight edit
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // Resolution macros        
 #define RESOLUTION_X 1280.0f 
@@ -41,8 +41,8 @@
 static void response_callback(const sfetch_response_t*);
 static uint8_t buffer[MAX_FILE_SIZE];
 
-// GEOMETRY
-// NURBS - surface
+// GEOMETRY PARAMETERS
+// NURBS - surface 
 std::vector<float> srf_cp = {
     // Row 0 (j=0)
     0.0f, 0.0f, 0.0f,    2.0f, 1.0f, 0.0f,    4.0f, 2.0f, 0.0f,    8.0f, 0.0f, 0.0f,
@@ -64,6 +64,7 @@ std::vector<float> srf_weights = {
     1.0f, 1.0f, 1.0f, 1.0f
 };
 
+// NURBS - Curve
 std::vector<float> bsp={
     0.0f, 0.0f, 7.0f, // P0
     3.0f, 0.0f, 4.0f, // P1 
@@ -308,7 +309,7 @@ static void print_status_text(float disp_w, float disp_h)
 static void render_ui()
 {
     ImGui::SetNextWindowPos(ImVec2(10,10), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(250,200), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(250,250), ImGuiCond_FirstUseEver);
     ImGui::PushFont(ui_font);
     ImGui::Begin("Menu", nullptr, ImGuiWindowFlags_NoMove);
     ImGui::Text("Application average %.3f ms/frame \n (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
@@ -348,7 +349,11 @@ static void render_ui()
             bspline->generate(0);
             state.buf_update_flag = true;
         }
-        
+        if(ImGui::Button("Add knot"))
+        {
+            bspline->insert_knot(0.5,1);
+            state.buf_update_flag = true;
+        }        
         break;
     case MODE_EDIT_SURFACE:
         ImGui::Text("RMB + scroll - orbit and zoom");

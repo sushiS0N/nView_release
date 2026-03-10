@@ -82,6 +82,29 @@ void compute_basis_funs(float u, int i, int p, std::vector<float> &basis_funs, c
     }
 }
 
+int find_multiplicity(float u, const std::vector<float> &knot_vector)
+{
+    int s = 0;
+
+    for(int i=0; i<knot_vector.size(); i++)
+        if(u == knot_vector[i]) s++;
+
+    return s;
+}
+
+std::vector<float> project_3D(const std::vector<float> &pts_4D)
+{
+    std::vector<float> pts_3D(pts_4D.size()/4*3, 0.0f);
+    for(int i = 0; i < pts_4D.size()/4; i++)
+    {
+        int idx = i*4;
+        int ci = i*3;
+        pts_3D[ci] = pts_4D[idx] / pts_4D[idx+3];
+        pts_3D[ci+1] = pts_4D[idx+1] / pts_4D[idx+3];
+        pts_3D[ci+2] = pts_4D[idx+2] / pts_4D[idx+3];
+    }
+    return pts_3D;
+}
 
 
 ////////////////////////
@@ -193,7 +216,6 @@ NURBS_spline::NURBS_spline(std::vector<float> cp, int degree, int resolution, st
 
     // Create the 4D homogeneous control points array
     calc_weighted_pts();
-
     create_buffers();    
 }
 
@@ -262,6 +284,115 @@ void NURBS_spline::add_cp(HMM_Vec3 new_pos)
     create_buffers();
 
     // Generate curve
+    generate();
+}
+
+void NURBS_spline::insert_knot(float u, int r)
+{
+    // Find the knot span
+    int k = find_span(u, n, p, knot_vector);
+    int s = find_multiplicity(u, knot_vector);
+
+    printf("Span: %i, Multiplicity: %i \n",k,s);
+    fflush(stdout);
+
+    assert((r+s)<=p && "The multiplicity of the knot must not exceed the dregree r + s <= p");
+
+    int mp = n + p + 1;
+    int nq = n + r;
+
+    std::vector<float> Qw(weighted_points.size() + r * 4, 0.0f);    // new 4D CPs
+    std::vector<float> Rw((p + 1) * 4, 0.0f);                       // temporary array for calculating new 4D CPs
+    std::vector<float> UQ(knot_vector.size() + r, 0.0f);            // new knot vector
+
+    // Fill new vector
+    for (int i = 0; i <= k; i++) UQ[i] = knot_vector[i];
+    for (int i = 1; i <= r; i++) UQ[k + i] = u;
+    for (int i = k + 1; i <= mp; i++) UQ[i + r] = knot_vector[i];
+
+    // Copy unaltered points
+    for (int i = 0; i <= k - p; i++)
+    {
+        int idx = i * 4;
+        Qw[idx] = weighted_points[idx];
+        Qw[idx + 1] = weighted_points[idx + 1];
+        Qw[idx + 2] = weighted_points[idx + 2];
+        Qw[idx + 3] = weighted_points[idx + 3];
+    }
+    for (int i = k - s; i <= n; i++)
+    {
+        int idx = i * 4;
+        int ir = (i+r)*4;
+        Qw[ir] = weighted_points[idx];
+        Qw[ir + 1] = weighted_points[idx + 1];
+        Qw[ir + 2] = weighted_points[idx + 2];
+        Qw[ir + 3] = weighted_points[idx + 3];
+    }
+    for (int i = 0; i <= p - s; i++)
+    {
+        int idx = i * 4;
+        Rw[idx] = weighted_points[(k - p + i)*4];
+        Rw[idx + 1] = weighted_points[(k - p + i)*4 + 1];
+        Rw[idx + 2] = weighted_points[(k - p + i)*4 + 2];
+        Rw[idx + 3] = weighted_points[(k - p + i)*4 + 3];
+    }
+
+    int L;
+    // Insert the knot r times
+    for (int j = 1; j <= r; j++)
+    {
+        L = k - p + j;
+        for (int i = 0; i <= p - j - s; i++)
+        {
+            int idx = i * 4;
+            // Calculate alpha values
+            float alpha = (u - knot_vector[L + i]) / (knot_vector[i + k + 1] - knot_vector[L + i]);
+
+            // Blend with alpha
+            Rw[idx] = alpha * Rw[idx + 4] + (1.0f - alpha) * Rw[idx]; // [i+1] = [i+4] 4D flat array!
+            Rw[idx + 1] = alpha * Rw[idx + 1 + 4] + (1.0f - alpha) * Rw[idx + 1];
+            Rw[idx + 2] = alpha * Rw[idx + 2 + 4] + (1.0f - alpha) * Rw[idx + 2];
+            Rw[idx + 3] = alpha * Rw[idx + 3 + 4] + (1.0f - alpha) * Rw[idx + 3];
+        }
+
+        // Copy first and last
+        Qw[L * 4] = Rw[0];
+        Qw[L * 4 + 1] = Rw[1];
+        Qw[L * 4 + 2] = Rw[2];
+        Qw[L * 4 + 3] = Rw[3];
+
+        int krjs = (k + r - j - s) * 4;
+        int pjs = (p - j - s) * 4;
+        Qw[krjs] = Rw[pjs];
+        Qw[krjs + 1] = Rw[pjs + 1];
+        Qw[krjs + 2] = Rw[pjs + 2];
+        Qw[krjs + 3] = Rw[pjs + 3];
+    }
+
+    // Load remaining CPs
+        for (int i = L + 1; i < k - s; i++)
+        {
+            int idx = i * 4;
+            int iL = (i - L) * 4;
+            Qw[idx] = Rw[iL];
+            Qw[idx + 1] = Rw[iL + 1];
+            Qw[idx + 2] = Rw[iL + 2];
+            Qw[idx + 3] = Rw[iL + 3];
+        }
+
+    // Update the curve
+    n = nq;
+    weighted_points = std::move(Qw);
+    control_points = std::move(project_3D(weighted_points));
+    knot_vector = std::move(UQ);
+
+    // Rebuild buffers
+    sg_destroy_buffer(crv_vtx_buf);
+    sg_destroy_buffer(control_pts_buf);
+    sg_destroy_buffer(knots_buf);
+    create_buffers();
+
+    // Regenerate curve
     generate();
 }
 
@@ -496,7 +627,7 @@ NURBS_surface::NURBS_surface(std::vector<float> cp, std::vector<float> u_knot_ve
     mesh_verts.resize(num_verts * 7, 0.0f);
 
     // Control points
-    assert(cp.size()>=0 && "Control points are empty");
+    assert(cp.size()>0 && "Control points are empty");
     control_points = std::move(cp);
 
     // Validate knot vectors(non-decreasing)
