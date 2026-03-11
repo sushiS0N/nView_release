@@ -22,6 +22,7 @@
 #include <vector>
 #include <cmath>
 #include <memory>
+#include <algorithm>
 
 #include "shader.h"
 #include "camera.h"
@@ -122,13 +123,14 @@ enum InteractionMode
 static struct
 {
     bool dragging = false;
-    float mouse_x, mouse_y, ndc_x, ndc_y;
+    float mouse_x, mouse_y, ndc_x, ndc_y, m_norm_x, m_norm_y;
     HMM_Vec3 mouse_ray;
 
     int selected_cp_index = -1;
 
     // Insert knot
     bool insert_knot = false;
+    float knot_value = 0.0f;
 
     // Draw curve
     bool add_pts = false;
@@ -266,10 +268,12 @@ void update_mouse_pos(const sapp_event *ev)
     interaction.mouse_ray = screen_to_ray(ndc_x, ndc_y, state.current_proj, state.current_view);
 
     // Store mouse screen and ndc coordinates
-    interaction.mouse_x = mouse_x;
-    interaction.mouse_y = mouse_y;   
     interaction.ndc_x = ndc_x;   
     interaction.ndc_y = ndc_y; 
+
+    // Normalized x and y
+    interaction.m_norm_x = std::clamp(mouse_x / sapp_widthf(), 0.0f, 1.0f);
+    interaction.m_norm_y = std::clamp(mouse_y / sapp_heightf(), 0.0f, 1.0f);
 }
 
 // Loggin functions
@@ -355,9 +359,13 @@ static void render_ui()
         }
         if(ImGui::Button("Add knot"))
         {
-            bspline->insert_knot(0.5,1);
+            bspline->insert_knot(interaction.knot_value,1);
             state.buf_update_flag = true;
         }        
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120);
+        //ImGui::InputFloat("[0,1]", &interaction.knot_value, 0.05f, 0.1f, "%.2f", 0);
+        ImGui::SliderFloat("[0,1]", &interaction.knot_value, 0.0f, 1.0f, "%.2f", 0);
         break;
     case MODE_EDIT_SURFACE:
         ImGui::Text("RMB + scroll - orbit and zoom");
@@ -553,7 +561,10 @@ void event(const sapp_event *ev)
                     bspline->show_pt_on_crv = false;
                 }
                 else
+                {
                     interaction.insert_knot = true;
+                    bspline->show_pt_on_crv = true;
+                }
             }
         }
         else if (ev->type == SAPP_EVENTTYPE_MOUSE_DOWN && ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
@@ -568,7 +579,8 @@ void event(const sapp_event *ev)
             else if(interaction.insert_knot)
             {
                 state.buf_update_flag = true;
-                float scr_to_crv =  ev->mouse_x / sapp_widthf() * bspline->length; 
+                update_mouse_pos(ev);
+                float scr_to_crv =  interaction.m_norm_x * bspline->length; 
                 bspline->insert_knot(bspline->lookup(scr_to_crv),1);
             }
             else
@@ -596,7 +608,8 @@ void event(const sapp_event *ev)
             if(interaction.insert_knot)
             {
                 state.buf_update_flag = true;
-                float scr_to_crv =  ev->mouse_x / sapp_widthf() * bspline->length; 
+                update_mouse_pos(ev);
+                float scr_to_crv =  interaction.m_norm_x* bspline->length;
                 bspline->slide_pt(scr_to_crv);
             }
         }

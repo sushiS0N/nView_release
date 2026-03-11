@@ -129,6 +129,11 @@ float NURBS_spline::lookup(float dist)
     auto it = std::lower_bound(arc_lengths.begin(), arc_lengths.end(), dist);
     int i = it - arc_lengths.begin();
 
+    if(dist>=arc_lengths.back()) return 1.0f;
+    if(dist<=arc_lengths.front()) return 0.0f;
+
+    if(i>arc_lengths.size()-2) i = arc_lengths.size()-2;
+
     if(arc_lengths[i] == dist)
     {
         return i/num_pts;
