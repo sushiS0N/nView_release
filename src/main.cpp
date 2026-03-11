@@ -549,7 +549,6 @@ void event(const sapp_event *ev)
             else
             {
                 interaction.dragging = true;
-
                 update_mouse_pos(ev);
                 interaction.selected_cp_index = closest_cp(bspline->control_points, state.current_mvp);
             }

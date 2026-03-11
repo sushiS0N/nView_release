@@ -106,6 +106,22 @@ std::vector<float> project_3D(const std::vector<float> &pts_4D)
     return pts_3D;
 }
 
+std::vector<float> extract_weights(const std::vector<float> &pts_4D)
+{
+    std::vector<float> weights(pts_4D.size()/4, 0.0f);
+    printf("Weights:");
+
+    for(int i = 0; i < pts_4D.size()/4; i++)
+    {
+        int widx = i * 4 + 3;
+        weights[i] = pts_4D[widx];
+        printf("%.2f, ",weights[i]);
+    }
+    printf("\n");
+    fflush(stdout);
+    return weights;
+}
+
 
 ////////////////////////
 ///// NURBS Spline /////
@@ -296,7 +312,7 @@ void NURBS_spline::insert_knot(float u, int r)
     printf("Span: %i, Multiplicity: %i \n",k,s);
     fflush(stdout);
 
-    assert((r+s)<=p && "The multiplicity of the knot must not exceed the dregree r + s <= p");
+    assert((r+s)<=p && "The multiplicity of the knot must not exceed the dregree r + s <= p");  // maybe introduce global multiplicity?
 
     int mp = n + p + 1;
     int nq = n + r;
@@ -380,8 +396,9 @@ void NURBS_spline::insert_knot(float u, int r)
             Qw[idx + 3] = Rw[iL + 3];
         }
 
-    // Update the curve
+    // Update the curve member variables
     n = nq;
+    weights = std::move(extract_weights(Qw));
     weighted_points = std::move(Qw);
     control_points = std::move(project_3D(weighted_points));
     knot_vector = std::move(UQ);
