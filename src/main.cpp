@@ -127,6 +127,9 @@ static struct
 
     int selected_cp_index = -1;
 
+    // Insert knot
+    bool insert_knot = false;
+
     // Draw curve
     bool add_pts = false;
 
@@ -262,7 +265,7 @@ void update_mouse_pos(const sapp_event *ev)
     // Calcualte ray
     interaction.mouse_ray = screen_to_ray(ndc_x, ndc_y, state.current_proj, state.current_view);
 
-    // Stoe mouse screen and ndc coordinates
+    // Store mouse screen and ndc coordinates
     interaction.mouse_x = mouse_x;
     interaction.mouse_y = mouse_y;   
     interaction.ndc_x = ndc_x;   
@@ -309,7 +312,7 @@ static void print_status_text(float disp_w, float disp_h)
 static void render_ui()
 {
     ImGui::SetNextWindowPos(ImVec2(10,10), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(250,250), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(250,300), ImGuiCond_FirstUseEver);
     ImGui::PushFont(ui_font);
     ImGui::Begin("Menu", nullptr, ImGuiWindowFlags_NoMove);
     ImGui::Text("Application average %.3f ms/frame \n (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
@@ -343,6 +346,7 @@ static void render_ui()
             state.buf_update_flag = true;
         }
         ImGui::Checkbox("Add points - c", &interaction.add_pts);
+        ImGui::Checkbox("Insert knot - p", &interaction.insert_knot);
         if(ImGui::Button("Reset"))
         {
             bspline = std::make_unique<NURBS_spline>(bsp, 3, 1000);
@@ -371,9 +375,7 @@ static void render_ui()
             state.buf_update_flag = true;
         }
         break;
-    }
-
-    
+    }    
     ImGui::PopFont();
     ImGui::End();
 }
@@ -448,7 +450,14 @@ void frame()
             sg_apply_pipeline(state.pip_pts);
             bspline->render_knots(mvp);
         }
+
+        if (bspline->show_pt_on_crv)
+        {
+            sg_apply_pipeline(state.pip_pts);
+            bspline->render_pt_on_crv(mvp);
+        }
         break;
+
     case MODE_EDIT_SURFACE:
         // Draw surface
         sg_apply_pipeline(state.pip_matcap);
@@ -536,6 +545,16 @@ void event(const sapp_event *ev)
                 else
                     interaction.add_pts = true;
             }
+            else if (ev->key_code == SAPP_KEYCODE_P)
+            {
+                if (interaction.insert_knot)
+                {
+                    interaction.insert_knot = false;
+                    bspline->show_pt_on_crv = false;
+                }
+                else
+                    interaction.insert_knot = true;
+            }
         }
         else if (ev->type == SAPP_EVENTTYPE_MOUSE_DOWN && ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
         {
@@ -545,6 +564,12 @@ void event(const sapp_event *ev)
                 HMM_Vec3 new_pt = line_plane_int(camera->calculate_position(), interaction.mouse_ray);
                 bspline->add_cp(new_pt);
                 state.buf_update_flag = true;
+            }
+            else if(interaction.insert_knot)
+            {
+                state.buf_update_flag = true;
+                float scr_to_crv =  ev->mouse_x / sapp_widthf() * bspline->length; 
+                bspline->insert_knot(bspline->lookup(scr_to_crv),1);
             }
             else
             {
@@ -567,6 +592,12 @@ void event(const sapp_event *ev)
                 {
                     move_crv_pt(interaction.selected_cp_index, interaction.mouse_ray, camera->calculate_position());
                 }
+            }
+            if(interaction.insert_knot)
+            {
+                state.buf_update_flag = true;
+                float scr_to_crv =  ev->mouse_x / sapp_widthf() * bspline->length; 
+                bspline->slide_pt(scr_to_crv);
             }
         }
         camera->handle_events(ev);

@@ -6,7 +6,7 @@
 #include "stdio.h"
 #include <vector>
 #include <cassert>
-
+#include <cmath>
 #include "nurbs.h"
 
 ///// Utility functions /////
@@ -122,9 +122,29 @@ std::vector<float> extract_weights(const std::vector<float> &pts_4D)
     return weights;
 }
 
-
 ////////////////////////
 ///// NURBS Spline /////
+float NURBS_spline::lookup(float dist)
+{   
+    auto it = std::lower_bound(arc_lengths.begin(), arc_lengths.end(), dist);
+    int i = it - arc_lengths.begin();
+
+    if(arc_lengths[i] == dist)
+    {
+        return i/num_pts;
+    }
+    else
+    {
+        float d1 = arc_lengths[i];
+        float d2 = arc_lengths[i+1];
+        float t = (dist - d1) / (d2 - d1); 
+        
+        float u1 = (float)i / num_pts;
+        float u2 = (float)(i+1) / num_pts;
+        return u1 + (u2-u1)*t;
+    }
+}
+
 void NURBS_spline::calc_knots()
 {
     int len_kv = n + p + 2;
@@ -193,6 +213,16 @@ void NURBS_spline::create_buffers()
     knots_bind.vertex_buffers[0] = this->knots_buf;
 
     knots_markers.resize((knot_vector.size()-6) * 7, 0.0f);
+
+    // Create point on curve buffer
+    sg_buffer_desc pcrv_desc = {};
+    pcrv_desc.size = sizeof(pt_crv);
+    pcrv_desc.usage.dynamic_update = true;
+    pcrv_desc.label = "bspline_knot_buffer";
+    pt_on_crv_buf = sg_make_buffer(pcrv_desc);
+
+    pt_on_crv_bind = {};
+    pt_on_crv_bind.vertex_buffers[0] = this->pt_on_crv_buf;
 }
 
 NURBS_spline::NURBS_spline(std::vector<float> cp, int degree, int resolution, std::vector<float> knots, std::vector<float> weights_in)
@@ -303,6 +333,23 @@ void NURBS_spline::add_cp(HMM_Vec3 new_pos)
     generate();
 }
 
+void NURBS_spline::slide_pt(float mval)
+{  
+    float u = lookup(mval);
+    float outpos[3];
+    curve_point(u, outpos);
+    pt_crv[0] = outpos[0];
+    pt_crv[1] = outpos[1];
+    pt_crv[2] = outpos[2];
+
+    // Set color
+    sg_color clr = sg_alice_blue;
+    pt_crv[3] = clr.r;
+    pt_crv[4] = clr.g;
+    pt_crv[5] = clr.b;
+    pt_crv[6] = clr.a;
+}
+
 void NURBS_spline::insert_knot(float u, int r)
 {
     // Find the knot span
@@ -407,6 +454,7 @@ void NURBS_spline::insert_knot(float u, int r)
     sg_destroy_buffer(crv_vtx_buf);
     sg_destroy_buffer(control_pts_buf);
     sg_destroy_buffer(knots_buf);
+    sg_destroy_buffer(pt_on_crv_buf);
     create_buffers();
 
     // Regenerate curve
@@ -416,6 +464,7 @@ void NURBS_spline::insert_knot(float u, int r)
 void NURBS_spline::generate(int selected_idx)
 {
     crv_pts.resize((num_pts + 1) * 7, 0.0f);
+    arc_lengths.resize((num_pts + 1), 0.0f);
     int idx = 0;
     for (int i = 0; i <= num_pts; i++)
     {
@@ -431,7 +480,23 @@ void NURBS_spline::generate(int selected_idx)
         crv_pts[idx + 2] = out_pos[2];
 
         int span = find_span(u, n, p, knot_vector);
-        compute_basis_funs(u, span, p, basis_funs, knot_vector);    
+        compute_basis_funs(u, span, p, basis_funs, knot_vector);
+
+        // Compute arc lengths
+        int previdx = (i - 1) * 7;
+        float distance = 0.0f;
+        if (i == 0)
+        {
+            arc_lengths[i] = 0.0f;
+        }
+        else
+        {
+            distance = std::sqrt(std::pow((out_pos[0] - crv_pts[previdx]), 2) +
+                                 std::pow((out_pos[1] - crv_pts[previdx + 1]), 2) +
+                                 std::pow((out_pos[2] - crv_pts[previdx + 2]), 2));
+
+            arc_lengths[i] = distance + arc_lengths[i-1];
+        }
 
         if(selected_idx!=-1 && selected_idx >= span-p && selected_idx <= span && show_influence)
         {
@@ -447,6 +512,9 @@ void NURBS_spline::generate(int selected_idx)
         crv_pts[idx + 5] = clr.b;
         crv_pts[idx + 6] = clr.a;
     }
+
+    // Updated curve length
+    length = arc_lengths[num_pts];
 
     for(int i = p; i<=knot_vector.size()-1; i++)
     {
@@ -469,6 +537,24 @@ void NURBS_spline::generate(int selected_idx)
     }
 
     color_cp = colour_points(control_points, 0.5f,0.2f,0.9f,1.0f);
+
+    // DistortionTest 
+    /*
+    if(test_pts.empty())
+    {
+        test_pts.insert(test_pts.begin(), crv_pts.begin(), crv_pts.end());
+    }
+    else 
+    {
+        bool equal = true;
+        for(int i=0; i<crv_pts.size(); i++)
+        {
+            if(std::abs(test_pts[i] - crv_pts[i]) > 1e-4) equal = false;
+        }
+        printf("Test poitns are %s", equal ? "equal" : "different");
+        fflush(stdout);
+        test_pts.insert(test_pts.begin(), crv_pts.begin(), crv_pts.end());
+    }*/
 }
 
 // Render functions
@@ -479,6 +565,10 @@ void NURBS_spline::update_buffer()
     if (show_knots)
     {
         sg_update_buffer(knots_buf, sg_range{knots_markers.data(), knots_markers.size() * sizeof(float)});
+    }
+    if (show_pt_on_crv)
+    {
+        sg_update_buffer(pt_on_crv_buf, SG_RANGE(pt_crv));
     }
 }
 
@@ -525,11 +615,26 @@ void NURBS_spline::render_knots(const HMM_Mat4 &mvp) const
     sg_draw(0, knots_markers.size()/7, 1);
 }
 
+void NURBS_spline::render_pt_on_crv(const HMM_Mat4 &mvp) const
+{
+    sg_apply_bindings(pt_on_crv_bind);
+
+    // Struct for shader
+    vs_params_t params = {};
+    memcpy(params.mvp, &mvp, sizeof(float)*16);
+    params.point_size = 8.0f;
+    params.draw_mode = 0;
+
+    sg_apply_uniforms(0, SG_RANGE_REF(params));
+    sg_draw(0, 1, 1);
+}
+
 NURBS_spline::~NURBS_spline()
 {
     sg_destroy_buffer(crv_vtx_buf);
     sg_destroy_buffer(control_pts_buf);
     sg_destroy_buffer(knots_buf);
+    sg_destroy_buffer(pt_on_crv_buf);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////

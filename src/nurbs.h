@@ -8,7 +8,8 @@ class NURBS_spline
 {
     public:
         std::vector<float> control_points;
-        bool show_influence, show_knots;
+        bool show_influence, show_knots, show_pt_on_crv;
+        float length;
         
         NURBS_spline(std::vector<float> cp, int degree, int num_pts, std::vector<float> knots={}, std::vector<float> weights_in={});
     
@@ -16,28 +17,34 @@ class NURBS_spline
         void update_cp(int index, HMM_Vec3 new_pos);
         void generate(int selected_idx = -1);
         void add_cp(HMM_Vec3 pt);
+        
         void insert_knot(float u, int r);
+        float lookup(float dist);
+        void slide_pt(float mval);
+
 
         // Rendering
         void update_buffer();
         void render_spline(const HMM_Mat4 &mvp) const;
         void render_control_points(const HMM_Mat4 &mvp) const;
         void render_knots(const HMM_Mat4 &mvp) const;
+        void render_pt_on_crv(const HMM_Mat4 &mvp) const;
 
         ~NURBS_spline();
 
-
     private:
-        sg_buffer crv_vtx_buf, control_pts_buf, knots_buf;
-        sg_bindings crv_bind, cp_bind, knots_bind;
-        std::vector<float> knot_vector, knots_markers, weights, weighted_points, basis_funs, color_cp, crv_pts;
+        sg_buffer crv_vtx_buf, control_pts_buf, knots_buf, pt_on_crv_buf;
+        sg_bindings crv_bind, cp_bind, knots_bind, pt_on_crv_bind;
+        std::vector<float> knot_vector, knots_markers, weights, weighted_points, basis_funs, color_cp, crv_pts, test_pts, arc_lengths;
+        float pt_crv[7];
         int n, p, num_pts;
 
         void curve_point(float u, float *crv_pt);   
         void calc_weighted_pts();
         void calc_knots();
-        void create_buffers();
 
+
+        void create_buffers();
 };
 
 
