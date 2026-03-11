@@ -268,6 +268,8 @@ void update_mouse_pos(const sapp_event *ev)
     interaction.mouse_ray = screen_to_ray(ndc_x, ndc_y, state.current_proj, state.current_view);
 
     // Store mouse screen and ndc coordinates
+    interaction.mouse_x = mouse_x;
+    interaction.mouse_y = mouse_y;
     interaction.ndc_x = ndc_x;   
     interaction.ndc_y = ndc_y; 
 
@@ -316,12 +318,10 @@ static void print_status_text(float disp_w, float disp_h)
 static void render_ui()
 {
     ImGui::SetNextWindowPos(ImVec2(10,10), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(250,300), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(250,350), ImGuiCond_FirstUseEver);
     ImGui::PushFont(ui_font);
     ImGui::Begin("Menu", nullptr, ImGuiWindowFlags_NoMove);
     ImGui::Text("Application average %.3f ms/frame \n (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-
-    
 
     // Mode buttons
     ImVec2 button_size(ImGui::GetContentRegionAvail().x / 3.0f - 4.0f,0);
@@ -357,6 +357,10 @@ static void render_ui()
             bspline->generate(0);
             state.buf_update_flag = true;
         }
+
+        // Insert knots
+        ImGui::Separator();
+        ImGui::Text("%s", bspline->print_knots().c_str());
         if(ImGui::Button("Add knot"))
         {
             bspline->insert_knot(interaction.knot_value,1);
@@ -366,6 +370,13 @@ static void render_ui()
         ImGui::SetNextItemWidth(120);
         //ImGui::InputFloat("[0,1]", &interaction.knot_value, 0.05f, 0.1f, "%.2f", 0);
         ImGui::SliderFloat("[0,1]", &interaction.knot_value, 0.0f, 1.0f, "%.2f", 0);
+
+        // Extract bezier
+        if(ImGui::Button("Extract bezier"))
+        {
+            bspline->extract_bezier();
+            state.buf_update_flag = true;
+        }   
         break;
     case MODE_EDIT_SURFACE:
         ImGui::Text("RMB + scroll - orbit and zoom");
@@ -587,7 +598,9 @@ void event(const sapp_event *ev)
             {
                 interaction.dragging = true;
                 update_mouse_pos(ev);
+                
                 interaction.selected_cp_index = closest_cp(bspline->control_points, state.current_mvp);
+                printf("dragging set, selected_idx: %d\n", interaction.selected_cp_index);
             }
         }
         else if (ev->type == SAPP_EVENTTYPE_MOUSE_UP && ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
@@ -598,6 +611,8 @@ void event(const sapp_event *ev)
         {
             if (interaction.dragging)
             {
+                printf("dragging move firing\n");
+                fflush(stdout);
                 state.buf_update_flag = true;
                 update_mouse_pos(ev);
                 if (interaction.selected_cp_index != -1)

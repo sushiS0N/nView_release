@@ -7,7 +7,11 @@
 #include <vector>
 #include <cassert>
 #include <cmath>
+#include <set>
+#include <string>
+
 #include "nurbs.h"
+
 
 ///// Utility functions /////
 std::vector<float> colour_points(const std::vector<float> &control_points, float r, float g, float b, float a)
@@ -124,6 +128,15 @@ std::vector<float> extract_weights(const std::vector<float> &pts_4D)
 
 ////////////////////////
 ///// NURBS Spline /////
+std::string NURBS_spline::print_knots()
+{
+    std::string knot_str = "{";
+    for(float knot : knot_vector)
+        knot_str += std::to_string(knot).substr(0,4) + ", ";
+    knot_str += "}";
+    return knot_str;
+}
+
 float NURBS_spline::lookup(float dist)
 {   
     auto it = std::lower_bound(arc_lengths.begin(), arc_lengths.end(), dist);
@@ -464,6 +477,20 @@ void NURBS_spline::insert_knot(float u, int r)
 
     // Regenerate curve
     generate();
+}
+
+void NURBS_spline::extract_bezier()
+{
+    if(control_points.size()/3 == (p + 1)) return;
+
+    std::set unique_knots(knot_vector.begin(), knot_vector.end());
+    for(auto it : unique_knots)
+    {
+        int s = find_multiplicity(it, knot_vector);
+        if(s >= p) continue;
+        int r = p-s;
+        insert_knot(it,r);
+    }
 }
 
 void NURBS_spline::generate(int selected_idx)

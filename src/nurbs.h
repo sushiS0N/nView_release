@@ -1,6 +1,7 @@
 #include "HandmadeMath.h"
 #include "stdio.h"
 #include <vector>
+#include <string>
 
 
 ///// NURBS Spline class /////
@@ -17,11 +18,13 @@ class NURBS_spline
         void update_cp(int index, HMM_Vec3 new_pos);
         void generate(int selected_idx = -1);
         void add_cp(HMM_Vec3 pt);
-        
+
+        // Knots
         void insert_knot(float u, int r);
+        void extract_bezier();
         float lookup(float dist);
         void slide_pt(float mval);
-
+        std::string print_knots();
 
         // Rendering
         void update_buffer();
