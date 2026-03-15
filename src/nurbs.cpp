@@ -12,7 +12,6 @@
 
 #include "nurbs.h"
 
-
 ///// Utility functions /////
 std::vector<float> colour_points(const std::vector<float> &control_points, float r, float g, float b, float a)
 {
@@ -113,15 +112,14 @@ std::vector<float> project_3D(const std::vector<float> &pts_4D)
 std::vector<float> extract_weights(const std::vector<float> &pts_4D)
 {
     std::vector<float> weights(pts_4D.size()/4, 0.0f);
-    printf("Weights:");
-
+    //printf("Weights:");
     for(int i = 0; i < pts_4D.size()/4; i++)
     {
         int widx = i * 4 + 3;
         weights[i] = pts_4D[widx];
-        printf("%.2f, ",weights[i]);
+        //printf("%.2f, ",weights[i]);
     }
-    printf("\n");
+    //printf("\n");
     fflush(stdout);
     return weights;
 }
@@ -479,18 +477,132 @@ void NURBS_spline::insert_knot(float u, int r)
     generate();
 }
 
-void NURBS_spline::extract_bezier()
+void NURBS_spline::convert_to_bezier()
 {
-    if(control_points.size()/3 == (p + 1)) return;
+    std::vector<float> temp3d;
+    printf("Bezier decomp Cps:\n");
+    for (int i = 0; i < bezier_segments.size(); i++)
+    {
+        temp3d = std::move(project_3D(bezier_segments[i]));
+        printf("Span %i:\n", i);
+        for (int j = 0; j < temp3d.size() / 3; j++)
+        {
+            int idx = j * 3;
+            printf("Cp {%i,%i}: ", i, j);
+            printf("%.2f, ", temp3d[idx]);
+            printf("%.2f, ", temp3d[idx + 1]);
+            printf("%.2f\n", temp3d[idx + 2]);
+        }
+    }
+
+    if (control_points.size() / 3 == (p + 1))
+        return;
 
     std::set unique_knots(knot_vector.begin(), knot_vector.end());
-    for(auto it : unique_knots)
+    for (auto it : unique_knots)
     {
         int s = find_multiplicity(it, knot_vector);
-        if(s >= p) continue;
-        int r = p-s;
-        insert_knot(it,r);
+        if (s >= p)
+            continue;
+        int r = p - s;
+        insert_knot(it, r);
     }
+
+    printf("//////////////");
+    printf("After converting to bezier");
+    for(int i=0; i<control_points.size()/3; i++)
+    {
+        int idx = i*3;
+        printf("Cp {%i}: ",i);
+        printf("%.2f, ",control_points[idx]);
+        printf("%.2f, ",control_points[idx+1]);
+        printf("%.2f\n",control_points[idx+2]);
+    }
+    fflush(stdout);
+}
+
+void NURBS_spline::extract_bezier_segments()
+{
+    int m = n + p + 1;
+    int a = p;
+    int b = p + 1;
+    int nb = 0;
+
+    // Find individual spans to size Qw and alphas
+    int unique_spans = 1;
+    for (int i = p + 1; i < knot_vector.size() - p; i++)
+    {
+        if (knot_vector[i] != knot_vector[i + 1])
+            unique_spans++;
+    }
+
+    printf("Unique spans: %i\n", unique_spans);
+    fflush(stdout);
+
+    std::vector<std::vector<float>> Qw(unique_spans, std::vector<float>((p + 1) * 4));
+    std::vector<float> alphas(unique_spans * p);
+
+    // Copy first 4 points
+    for (int i = 0; i <= p; i++)
+    {
+        int idx = i * 4;
+        Qw[nb][idx] = weighted_points[idx];
+        Qw[nb][idx + 1] = weighted_points[idx + 1];
+        Qw[nb][idx + 2] = weighted_points[idx + 2];
+        Qw[nb][idx + 3] = weighted_points[idx + 3];
+    }
+
+    while (b < m)
+    {
+        int i = b;
+        while (b < m && knot_vector[b + 1] == knot_vector[b]) b++; // Get multiplicity
+        int mult = b - i + 1;
+        if (mult < p)
+        {
+            float numer = knot_vector[b] - knot_vector[a]; // Numerator of alpha
+            for (int j = p; j > mult; j--)
+                alphas[j - mult - 1] = numer / (knot_vector[a + j] - knot_vector[a]);
+            int r = p - mult;
+            for (int j = 1; j <= r; j++)
+            {
+                int save = r - j;
+                int s = mult + j; // This many new points
+                for (int k = p; k >= s; k--)
+                {
+                    float k_idx = k * 4;
+                    float alpha = alphas[k - s];
+                    Qw[nb][k_idx] = alpha * Qw[nb][k_idx] + (1.0f - alpha) * Qw[nb][(k - 1) * 4];
+                    Qw[nb][k_idx + 1] = alpha * Qw[nb][k_idx + 1] + (1.0f - alpha) * Qw[nb][(k - 1) * 4+1];
+                    Qw[nb][k_idx + 2] = alpha * Qw[nb][k_idx + 2] + (1.0f - alpha) * Qw[nb][(k - 1) * 4+2];
+                    Qw[nb][k_idx + 3] = alpha * Qw[nb][k_idx + 3] + (1.0f - alpha) * Qw[nb][(k - 1) * 4+3];
+                }
+                if (b < m)
+                {
+                    Qw[nb + 1][save*4] = Qw[nb][p*4]; // The last point of the bezier curve
+                    Qw[nb + 1][save*4+1] = Qw[nb][p*4+1];
+                    Qw[nb + 1][save*4+2] = Qw[nb][p*4+2];
+                    Qw[nb + 1][save*4+3] = Qw[nb][p*4+3];
+                }
+            }
+        }    
+        nb = nb + 1;
+        if (b < m)
+        {
+            for (int i = p - mult; i <= p; i++)
+            {
+                int idx = i * 4;
+                int bpi_idx = (b - p + i) * 4;
+                Qw[nb][idx] = weighted_points[bpi_idx];
+                Qw[nb][idx + 1] = weighted_points[bpi_idx + 1];
+                Qw[nb][idx + 2] = weighted_points[bpi_idx + 2];
+                Qw[nb][idx + 3] = weighted_points[bpi_idx + 3];
+            }
+
+            a = b;
+            b = b + 1;
+        }
+    }
+    bezier_segments = std::move(Qw);
 }
 
 void NURBS_spline::generate(int selected_idx)
@@ -569,7 +681,7 @@ void NURBS_spline::generate(int selected_idx)
     }
 
     color_cp = colour_points(control_points, 0.5f,0.2f,0.9f,1.0f);
-
+    extract_bezier_segments();
     // DistortionTest 
     /*
     if(test_pts.empty())

@@ -1,7 +1,9 @@
+#pragma once
 #include "HandmadeMath.h"
 #include "stdio.h"
 #include <vector>
 #include <string>
+#include <array>
 
 
 ///// NURBS Spline class /////
@@ -21,7 +23,8 @@ class NURBS_spline
 
         // Knots
         void insert_knot(float u, int r);
-        void extract_bezier();
+        void convert_to_bezier();                                         // transforms the curve
+        void extract_bezier_segments();  // return bezier segments [seg][CPs]
         float lookup(float dist);
         void slide_pt(float mval);
         std::string print_knots();
@@ -38,7 +41,11 @@ class NURBS_spline
     private:
         sg_buffer crv_vtx_buf, control_pts_buf, knots_buf, pt_on_crv_buf;
         sg_bindings crv_bind, cp_bind, knots_bind, pt_on_crv_bind;
-        std::vector<float> knot_vector, knots_markers, weights, weighted_points, basis_funs, color_cp, crv_pts, test_pts, arc_lengths;
+        std::vector<float> knot_vector, knots_markers, weights, weighted_points, basis_funs;
+        std::vector<float> color_cp, crv_pts;
+        std::vector<float> arc_lengths;
+        std::vector<std::vector<float>> bezier_segments;    //[seg][4D_pts * (p+1)] 
+        std::vector<std::array<float,6>> bezier_aabb;   //[seg][minX,minY,minZ,maxX,maxY,maxZ] 
         float pt_crv[7];
         int n, p, num_pts;
 

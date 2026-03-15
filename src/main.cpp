@@ -372,9 +372,9 @@ static void render_ui()
         ImGui::SliderFloat("[0,1]", &interaction.knot_value, 0.0f, 1.0f, "%.2f", 0);
 
         // Extract bezier
-        if(ImGui::Button("Extract bezier"))
+        if(ImGui::Button("Convert to bezier"))
         {
-            bspline->extract_bezier();
+            bspline->convert_to_bezier();
             state.buf_update_flag = true;
         }   
         break;
@@ -889,5 +889,3 @@ sapp_desc sokol_main(int argc, char *argv[])
 
     return desc;
 }
-
-
