@@ -11,7 +11,7 @@ class NURBS_spline
 {
     public:
         std::vector<float> control_points;
-        bool show_influence, show_knots, show_pt_on_crv;
+        bool show_influence, show_knots, show_pt_on_crv, show_aabb;
         float length;
         
         NURBS_spline(std::vector<float> cp, int degree, int num_pts, std::vector<float> knots={}, std::vector<float> weights_in={});
@@ -20,11 +20,12 @@ class NURBS_spline
         void update_cp(int index, HMM_Vec3 new_pos);
         void generate(int selected_idx = -1);
         void add_cp(HMM_Vec3 pt);
+        void regenerate_curve();
 
         // Knots
-        void insert_knot(float u, int r);
-        void convert_to_bezier();                                         // transforms the curve
-        void extract_bezier_segments();  // return bezier segments [seg][CPs]
+        void insert_knot(float u, int r, bool rebuild_bufs = true);
+        void convert_to_bezier();           // transforms the curve into bezier segments based on knot value
+        void extract_bezier_segments();     // return bezier segments [seg][CPs]
         float lookup(float dist);
         void slide_pt(float mval);
         std::string print_knots();
@@ -36,22 +37,33 @@ class NURBS_spline
         void render_knots(const HMM_Mat4 &mvp) const;
         void render_pt_on_crv(const HMM_Mat4 &mvp) const;
 
+        // Debugging
+        void render_aabb(const HMM_Mat4 &mvp) const;
+
+
         ~NURBS_spline();
 
     private:
-        sg_buffer crv_vtx_buf, control_pts_buf, knots_buf, pt_on_crv_buf;
-        sg_bindings crv_bind, cp_bind, knots_bind, pt_on_crv_bind;
+        // GPU resources
+        sg_buffer crv_vtx_buf, control_pts_buf, knots_buf, pt_on_crv_buf, aabb_buf = {};
+        sg_bindings crv_bind, cp_bind, knots_bind, pt_on_crv_bind, aabb_bind;
+        // Geometry 
         std::vector<float> knot_vector, knots_markers, weights, weighted_points, basis_funs;
         std::vector<float> color_cp, crv_pts;
         std::vector<float> arc_lengths;
+        std::vector<float> aabb_pts;
+        
         std::vector<std::vector<float>> bezier_segments;    //[seg][4D_pts * (p+1)] 
         std::vector<std::array<float,6>> bezier_aabb;   //[seg][minX,minY,minZ,maxX,maxY,maxZ] 
         float pt_crv[7];
         int n, p, num_pts;
 
+        // Helpers
         void curve_point(float u, float *crv_pt);   
         void calc_weighted_pts();
         void calc_knots();
+        void create_aabb_boxes();
+        void create_aabb_buf();
 
 
         void create_buffers();

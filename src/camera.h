@@ -5,6 +5,7 @@ class Camera
 {
 public:
     float orbit_sens, pan_sens, zoom_sens, res_width, res, height;
+    float distance;
     Camera(HMM_Vec3 target, float distance, float yaw, float pitch, float res_width, float res_height);
 
     HMM_Vec3 calculate_position() const;
@@ -19,7 +20,7 @@ public:
 
 private:
     HMM_Vec3 target;
-    float distance;
+    
     float yaw;
     float pitch;
     bool panning;

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <set>
 #include <string>
+#include <limits>
 
 #include "nurbs.h"
 
@@ -124,8 +125,39 @@ std::vector<float> extract_weights(const std::vector<float> &pts_4D)
     return weights;
 }
 
-////////////////////////
-///// NURBS Spline /////
+std::vector<std::array<float,6>> compute_AABB(const std::vector<std::vector<float>>& Qw)   // Qw[seg][4D_cp * (p+1)]
+{
+    std::vector<std::array<float,6>> aabb;
+    // Compute AABB bbox
+    for(int i = 0; i<Qw.size(); i++)
+    {
+        std::vector<float> temp3d = std::move(project_3D(Qw[i]));
+        float minX,minY, minZ, maxX, maxY, maxZ;
+        minX = minY = minZ = std::numeric_limits<float>::max();
+        maxX = maxY = maxZ = std::numeric_limits<float>::lowest();
+    
+        for(int i = 0; i<temp3d.size()/3; i++)
+        {
+            int idx = i*3;
+            // x
+            minX = temp3d[idx] < minX ? temp3d[idx] : minX;
+            maxX = temp3d[idx] > maxX ? temp3d[idx] : maxX;
+            // y
+            minY = temp3d[idx+1] < minY ? temp3d[idx+1] : minY;
+            maxY = temp3d[idx+1] > maxY ? temp3d[idx+1] : maxY;
+            // z
+            minZ = temp3d[idx+2] < minZ ? temp3d[idx+2] : minZ;
+            maxZ = temp3d[idx+2] > maxZ ? temp3d[idx+2] : maxZ;
+        }
+
+        aabb.push_back({minX, minY, minZ, maxX, maxY, maxZ});
+    }
+    return aabb;
+}
+
+//////////////////////////////////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////
+///// NURBS Spline functions //////////////////////////////////////////////////////////////////////
 std::string NURBS_spline::print_knots()
 {
     std::string knot_str = "{";
@@ -234,7 +266,7 @@ void NURBS_spline::create_buffers()
     sg_buffer_desc pcrv_desc = {};
     pcrv_desc.size = sizeof(pt_crv);
     pcrv_desc.usage.dynamic_update = true;
-    pcrv_desc.label = "bspline_knot_buffer";
+    pcrv_desc.label = "bspline_point_on_crv_buffer";
     pt_on_crv_buf = sg_make_buffer(pcrv_desc);
 
     pt_on_crv_bind = {};
@@ -252,6 +284,7 @@ NURBS_spline::NURBS_spline(std::vector<float> cp, int degree, int resolution, st
     num_pts = resolution;
     show_influence = false;
     show_knots = false;
+    show_aabb = false;
 
     // Knot vector
     if (knots.empty())
@@ -338,15 +371,8 @@ void NURBS_spline::add_cp(HMM_Vec3 new_pos)
     calc_knots();
     weights.push_back(1.0f);
     calc_weighted_pts();
-
-    // Rebuild buffers
-    sg_destroy_buffer(crv_vtx_buf);
-    sg_destroy_buffer(control_pts_buf);
-    sg_destroy_buffer(knots_buf);
-    create_buffers();
-
-    // Generate curve
-    generate();
+    // Rebuild buffers and curve geometry
+    regenerate_curve();
 }
 
 void NURBS_spline::slide_pt(float mval)
@@ -366,7 +392,7 @@ void NURBS_spline::slide_pt(float mval)
     pt_crv[6] = clr.a;
 }
 
-void NURBS_spline::insert_knot(float u, int r)
+void NURBS_spline::insert_knot(float u, int r, bool rebuild_bufs)
 {
     // Find the knot span
     int k = find_span(u, n, p, knot_vector);
@@ -466,11 +492,17 @@ void NURBS_spline::insert_knot(float u, int r)
     control_points = std::move(project_3D(weighted_points));
     knot_vector = std::move(UQ);
 
+    if (rebuild_bufs) regenerate_curve();
+}
+
+void NURBS_spline::regenerate_curve()
+{
     // Rebuild buffers
     sg_destroy_buffer(crv_vtx_buf);
     sg_destroy_buffer(control_pts_buf);
     sg_destroy_buffer(knots_buf);
     sg_destroy_buffer(pt_on_crv_buf);
+    sg_destroy_buffer(aabb_buf);
     create_buffers();
 
     // Regenerate curve
@@ -479,22 +511,6 @@ void NURBS_spline::insert_knot(float u, int r)
 
 void NURBS_spline::convert_to_bezier()
 {
-    std::vector<float> temp3d;
-    printf("Bezier decomp Cps:\n");
-    for (int i = 0; i < bezier_segments.size(); i++)
-    {
-        temp3d = std::move(project_3D(bezier_segments[i]));
-        printf("Span %i:\n", i);
-        for (int j = 0; j < temp3d.size() / 3; j++)
-        {
-            int idx = j * 3;
-            printf("Cp {%i,%i}: ", i, j);
-            printf("%.2f, ", temp3d[idx]);
-            printf("%.2f, ", temp3d[idx + 1]);
-            printf("%.2f\n", temp3d[idx + 2]);
-        }
-    }
-
     if (control_points.size() / 3 == (p + 1))
         return;
 
@@ -505,20 +521,9 @@ void NURBS_spline::convert_to_bezier()
         if (s >= p)
             continue;
         int r = p - s;
-        insert_knot(it, r);
+        insert_knot(it, r, false);
     }
-
-    printf("//////////////");
-    printf("After converting to bezier");
-    for(int i=0; i<control_points.size()/3; i++)
-    {
-        int idx = i*3;
-        printf("Cp {%i}: ",i);
-        printf("%.2f, ",control_points[idx]);
-        printf("%.2f, ",control_points[idx+1]);
-        printf("%.2f\n",control_points[idx+2]);
-    }
-    fflush(stdout);
+    regenerate_curve();
 }
 
 void NURBS_spline::extract_bezier_segments()
@@ -536,9 +541,6 @@ void NURBS_spline::extract_bezier_segments()
             unique_spans++;
     }
 
-    printf("Unique spans: %i\n", unique_spans);
-    fflush(stdout);
-
     std::vector<std::vector<float>> Qw(unique_spans, std::vector<float>((p + 1) * 4));
     std::vector<float> alphas(unique_spans * p);
 
@@ -555,19 +557,19 @@ void NURBS_spline::extract_bezier_segments()
     while (b < m)
     {
         int i = b;
-        while (b < m && knot_vector[b + 1] == knot_vector[b]) b++; // Get multiplicity
+        while (b < m && knot_vector[b + 1] == knot_vector[b]) b++;  // Get multiplicity
         int mult = b - i + 1;
         if (mult < p)
         {
-            float numer = knot_vector[b] - knot_vector[a]; // Numerator of alpha
+            float numer = knot_vector[b] - knot_vector[a];          // Numerator of alpha
             for (int j = p; j > mult; j--)
                 alphas[j - mult - 1] = numer / (knot_vector[a + j] - knot_vector[a]);
             int r = p - mult;
             for (int j = 1; j <= r; j++)
             {
                 int save = r - j;
-                int s = mult + j; // This many new points
-                for (int k = p; k >= s; k--)
+                int s = mult + j;                                   // This many new points
+                for (int k = p; k >= s; k--)                        // Inser new points
                 {
                     float k_idx = k * 4;
                     float alpha = alphas[k - s];
@@ -578,7 +580,7 @@ void NURBS_spline::extract_bezier_segments()
                 }
                 if (b < m)
                 {
-                    Qw[nb + 1][save*4] = Qw[nb][p*4]; // The last point of the bezier curve
+                    Qw[nb + 1][save*4] = Qw[nb][p*4];               // The last point of the bezier curve
                     Qw[nb + 1][save*4+1] = Qw[nb][p*4+1];
                     Qw[nb + 1][save*4+2] = Qw[nb][p*4+2];
                     Qw[nb + 1][save*4+3] = Qw[nb][p*4+3];
@@ -602,9 +604,67 @@ void NURBS_spline::extract_bezier_segments()
             b = b + 1;
         }
     }
+    bezier_aabb = std::move(compute_AABB(Qw));
     bezier_segments = std::move(Qw);
+    create_aabb_boxes();
 }
 
+void NURBS_spline::create_aabb_boxes()
+{
+    std::vector<float> box_pts;
+    box_pts.reserve(bezier_aabb.size()*24*7);
+    for(int i = 0; i<bezier_aabb.size(); i++)
+    {
+        auto push_vertex = [&box_pts](float x, float y, float z, sg_color col){
+            box_pts.push_back(x);
+            box_pts.push_back(y);
+            box_pts.push_back(z);
+            box_pts.push_back(col.r);
+            box_pts.push_back(col.g);
+            box_pts.push_back(col.b);
+            box_pts.push_back(col.a);
+        };
+        
+        auto& b = bezier_aabb[i];
+        float minX=b[0], minY=b[1], minZ=b[2];
+        float maxX=b[3], maxY=b[4], maxZ=b[5];
+
+        HMM_Vec3 corners[8] = {
+            // Base of the box
+            {minX, minY, minZ}, {minX, minY, maxZ}, {maxX, minY, maxZ}, {maxX, minY, minZ},
+            // Top of the box
+            {minX, maxY, minZ}, {minX, maxY, maxZ}, {maxX, maxY, maxZ}, {maxX, maxY, minZ}
+        };
+
+        int edges[12][2] = {
+            {0,1}, {1,2}, {2,3}, {3,0},
+            {0,4}, {1,5}, {2,6}, {3,7},
+            {4,5}, {5,6}, {6,7}, {7,4},
+        };
+
+        for(auto& e : edges)
+        {
+            push_vertex(corners[e[0]].X, corners[e[0]].Y, corners[e[0]].Z, sg_chartreuse);
+            push_vertex(corners[e[1]].X, corners[e[1]].Y, corners[e[1]].Z, sg_chartreuse);
+        }
+    }
+    aabb_pts = std::move(box_pts);
+    create_aabb_buf();
+}
+
+void NURBS_spline::create_aabb_buf()
+{
+    if(aabb_buf.id != 0) sg_destroy_buffer(aabb_buf);
+
+    sg_buffer_desc aabb_desc = {};
+    aabb_desc.size = aabb_pts.size() * sizeof(float);
+    aabb_desc.usage.dynamic_update = true;
+    aabb_desc.label = "bspline_aabb_buffer";
+    aabb_buf = sg_make_buffer(aabb_desc);
+
+    aabb_bind = {};
+    aabb_bind.vertex_buffers[0] = this->aabb_buf;
+}
 void NURBS_spline::generate(int selected_idx)
 {
     crv_pts.resize((num_pts + 1) * 7, 0.0f);
@@ -682,23 +742,6 @@ void NURBS_spline::generate(int selected_idx)
 
     color_cp = colour_points(control_points, 0.5f,0.2f,0.9f,1.0f);
     extract_bezier_segments();
-    // DistortionTest 
-    /*
-    if(test_pts.empty())
-    {
-        test_pts.insert(test_pts.begin(), crv_pts.begin(), crv_pts.end());
-    }
-    else 
-    {
-        bool equal = true;
-        for(int i=0; i<crv_pts.size(); i++)
-        {
-            if(std::abs(test_pts[i] - crv_pts[i]) > 1e-4) equal = false;
-        }
-        printf("Test poitns are %s", equal ? "equal" : "different");
-        fflush(stdout);
-        test_pts.insert(test_pts.begin(), crv_pts.begin(), crv_pts.end());
-    }*/
 }
 
 // Render functions
@@ -714,12 +757,15 @@ void NURBS_spline::update_buffer()
     {
         sg_update_buffer(pt_on_crv_buf, SG_RANGE(pt_crv));
     }
+    if (show_aabb)
+    {
+        sg_update_buffer(aabb_buf, sg_range{aabb_pts.data(), aabb_pts.size() * sizeof(float)});
+    }
 }
 
 void NURBS_spline::render_spline(const HMM_Mat4 &mvp) const
 {
     sg_apply_bindings(crv_bind);
-
     // Struct for shader
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
@@ -733,13 +779,11 @@ void NURBS_spline::render_spline(const HMM_Mat4 &mvp) const
 void NURBS_spline::render_control_points(const HMM_Mat4 &mvp) const
 {
     sg_apply_bindings(cp_bind);
-
     // Struct for shader
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
     params.point_size = 6.0f;
     params.draw_mode = 0;
-
 
     sg_apply_uniforms(0, SG_RANGE_REF(params));
     sg_draw(0, n + 1, 1);
@@ -748,7 +792,6 @@ void NURBS_spline::render_control_points(const HMM_Mat4 &mvp) const
 void NURBS_spline::render_knots(const HMM_Mat4 &mvp) const
 {
     sg_apply_bindings(knots_bind);
-
     // Struct for shader
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
@@ -762,7 +805,6 @@ void NURBS_spline::render_knots(const HMM_Mat4 &mvp) const
 void NURBS_spline::render_pt_on_crv(const HMM_Mat4 &mvp) const
 {
     sg_apply_bindings(pt_on_crv_bind);
-
     // Struct for shader
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
@@ -773,17 +815,31 @@ void NURBS_spline::render_pt_on_crv(const HMM_Mat4 &mvp) const
     sg_draw(0, 1, 1);
 }
 
+void NURBS_spline::render_aabb(const HMM_Mat4 &mvp) const
+{
+    sg_apply_bindings(aabb_bind);
+    // Struct for shader
+    vs_params_t params = {};
+    memcpy(params.mvp, &mvp, sizeof(float)*16);
+    params.point_size = 8.0f;
+    params.draw_mode = 0;
+
+    sg_apply_uniforms(0, SG_RANGE_REF(params));
+    sg_draw(0, aabb_pts.size()/7, 1);
+}
+
 NURBS_spline::~NURBS_spline()
 {
     sg_destroy_buffer(crv_vtx_buf);
     sg_destroy_buffer(control_pts_buf);
     sg_destroy_buffer(knots_buf);
     sg_destroy_buffer(pt_on_crv_buf);
+    sg_destroy_buffer(aabb_buf);
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
-//////////////////////////////////////////////////////////////////////////////////////////////////////
-///// NURBS Surface functions ////////////////////////////////////////////////////////////////////////
+///////////////////////////////////////////////////////////////////////////////////////////////
+///// NURBS Surface functions //////////////////////////////////////////////////////////////////////
 void NURBS_surface::create_buffers()
 {
     // Create vertex buffer
@@ -1055,6 +1111,11 @@ void NURBS_surface::update_srf_cp(int index, HMM_Vec3 new_pos)
     int wp_index = index * 4;
 
     // Update control point
+    control_points[index*3] = new_pos.X;
+    // keep Y for now
+    control_points[index*3+2] = new_pos.Z;
+
+    // Update colour points
     color_cp[cp_index] = new_pos.X;
     // keep Y
     color_cp[cp_index + 2] = new_pos.Z;
