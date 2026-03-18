@@ -8,15 +8,17 @@ class Gizmo
 {
 public:
     HMM_Vec3 origin, x_axis, y_axis, z_axis;
+    HMM_Mat4 gumball_mvp;
     float scale;
+    float world_scale;
     ActiveAxis active_axis = ActiveAxis::None;
     Gizmo(float scale = 1);
     ~Gizmo();
 
     void generate_gizmo();
-    void select_axis(const HMM_Mat4 &mvp, float screen_w, float screen_h, float mouse_x, float mouse_y);
+    void select_axis(const HMM_Mat4& mvp, float screen_w, float screen_h, float mouse_x, float mouse_y);
     
-    HMM_Mat4 gumball_mvp(const HMM_Vec3& cam_pos, const HMM_Mat4& view, const HMM_Mat4& proj, float gumball_size);
+    HMM_Mat4 set_gumball_mvp(const HMM_Vec3& cam_pos, const HMM_Mat4& view, const HMM_Mat4& proj, float gumball_size);
     // Axis indicator
     void render_gizmo(const HMM_Mat4& mvp);
     void render_gumball(const HMM_Mat4& mvp, bool show);

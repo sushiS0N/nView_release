@@ -6,6 +6,7 @@
 
 #include "string.h"
 #include <cmath>
+#include <algorithm>
 
 // Utilities
 HMM_Mat4 extract_rotation(const HMM_Mat4& view)
@@ -44,10 +45,11 @@ HMM_Vec2 line_closest_point(HMM_Vec2 start, HMM_Vec2 end, HMM_Vec2 pt)
 {
     auto line = HMM_SubV2(end, start);
     float len = HMM_Len(line);
-    HMM_Norm(line);
+    line = HMM_NormV2(line);
 
     auto v = HMM_SubV2(pt, start);
     auto d = HMM_DotV2(v, line);
+    d = std::clamp(d, 0.0f, len);
 
     return HMM_Add(start, HMM_MulV2F(line, d));
 }
@@ -64,33 +66,33 @@ Gizmo::Gizmo(float scale)
     create_axis_buffer();
 }
 
-void Gizmo::select_axis(const HMM_Mat4 &mvp, float screen_w, float screen_h, float mouse_x, float mouse_y)
+void Gizmo::select_axis(const HMM_Mat4& mvp, float screen_w, float screen_h, float mouse_x, float mouse_y)
 {
+    update_screen_axes(mvp, screen_w, screen_h);
     std::array<HMM_Vec2,3> screen_gum = {screen_x, screen_y, screen_z};
     HMM_Vec2 mouse_pos = HMM_V2(mouse_x, mouse_y);
+    printf("MousePos: %.2f, %.2f\n", mouse_x, mouse_y);
     float min_dist = screen_w * 2;
     int selected = -1;
 
-    update_screen_axes(mvp, screen_w, screen_h);
-    for(int i=0; i<screen_gum.size(); i++)
+    for (int i = 0; i < screen_gum.size(); i++)
     {
-
-        float pixel_dist = std::sqrt((screen_gum[i].X - mouse_pos.X)*(screen_gum[i].X - mouse_pos.X) + (screen_gum[i].Y-mouse_pos.Y)*(screen_gum[i].Y-mouse_pos.Y));
-        
-        if(pixel_dist < min_dist && pixel_dist < 10.0f)
+        HMM_Vec2 axis_closest = line_closest_point(screen_orig, screen_orig + screen_gum[i], mouse_pos);
+        float pixel_dist = std::sqrt((axis_closest.X - mouse_pos.X) * (axis_closest.X - mouse_pos.X) + (axis_closest.Y - mouse_pos.Y) * (axis_closest.Y - mouse_pos.Y));
+        printf("Screen orig at %i: %.2f, %.2f\n", i, screen_orig.X, screen_orig.Y);
+        printf("pixel dist at %i: %.2f\n", i, pixel_dist);
+        if (pixel_dist < min_dist && pixel_dist < 10.0f)
         {
             selected = i;
             min_dist = pixel_dist;
         }
     }
-    printf("Selected axis: %i\n",selected);
+    printf("Selected axis: %i\n", selected);
     fflush(stdout);
 }
 
 void Gizmo::update_screen_axes(const HMM_Mat4 &mvp, float screen_w, float screen_h)
 {
-    HMM_Vec2 axis = {};
-
     auto project_to_screen = [&](HMM_Vec3 pt)
     {
         HMM_Vec4 world_pos = HMM_V4(pt.X, pt.Y, pt.Z, 1.0f);
@@ -102,10 +104,10 @@ void Gizmo::update_screen_axes(const HMM_Mat4 &mvp, float screen_w, float screen
         return HMM_V2(screen_x, screen_y);
     };
     // Project gumball on screen
-    HMM_Vec2 screen_orig = project_to_screen(origin);
-    HMM_Vec2 proj_x_tip = project_to_screen(HMM_AddV3(origin, HMM_MulV3F(x_axis, scale)));
-    HMM_Vec2 proj_y_tip = project_to_screen(HMM_AddV3(origin, HMM_MulV3F(y_axis, scale)));
-    HMM_Vec2 proj_z_tip = project_to_screen(HMM_AddV3(origin, HMM_MulV3F(z_axis, scale)));
+    screen_orig = project_to_screen(origin);
+    HMM_Vec2 proj_x_tip = project_to_screen(HMM_AddV3(origin, HMM_MulV3F(x_axis, world_scale)));
+    HMM_Vec2 proj_y_tip = project_to_screen(HMM_AddV3(origin, HMM_MulV3F(y_axis, world_scale)));
+    HMM_Vec2 proj_z_tip = project_to_screen(HMM_AddV3(origin, HMM_MulV3F(z_axis, world_scale)));
 
     // Get vectors on screen
     screen_x = HMM_Sub(proj_x_tip, screen_orig);
@@ -135,13 +137,15 @@ void Gizmo::generate_gizmo()
 }
 
 // Render functions
-HMM_Mat4 Gizmo::gumball_mvp(const HMM_Vec3& cam_pos, const HMM_Mat4& view, const HMM_Mat4& proj, float gumball_size)
+HMM_Mat4 Gizmo::set_gumball_mvp(const HMM_Vec3& cam_pos, const HMM_Mat4& view, const HMM_Mat4& proj, float gumball_size)
 {
     float dist = HMM_LenV3(HMM_SubV3(origin, cam_pos));
-    HMM_Mat4 gumball_scale = HMM_Scale(HMM_V3(dist*gumball_size, dist*gumball_size, dist*gumball_size));
+    world_scale = dist * gumball_size;
+    HMM_Mat4 gumball_scale = HMM_Scale(HMM_V3(world_scale, world_scale, world_scale));
     HMM_Mat4 gumball_trans = HMM_Translate(origin);
     HMM_Mat4 gumball_model = HMM_MulM4(gumball_trans, gumball_scale);
-    return HMM_MulM4(proj, HMM_MulM4(view, gumball_model));
+    gumball_mvp = HMM_MulM4(proj, HMM_MulM4(view, gumball_model));
+    return gumball_mvp;
 }
 
 void Gizmo::create_axis_buffer()

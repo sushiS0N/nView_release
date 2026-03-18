@@ -478,7 +478,7 @@ void frame()
 
         // Draw gumball
         sg_apply_pipeline(state.pip_lines);
-        gumball->render_gizmo(gumball->gumball_mvp(camera->calculate_position(), state.view, state.proj, interaction.gumball_size));
+        gumball->render_gizmo(gumball->set_gumball_mvp(camera->calculate_position(), state.view, state.proj, interaction.gumball_size));
 
         // Draw bspline markers
         if (bspline->show_knots)
@@ -514,7 +514,7 @@ void frame()
 
         // Draw gumball
         sg_apply_pipeline(state.pip_lines);
-        gumball->render_gizmo(gumball->gumball_mvp(camera->calculate_position(), state.view, state.proj, interaction.gumball_size));
+        gumball->render_gizmo(gumball->set_gumball_mvp(camera->calculate_position(), state.view, state.proj, interaction.gumball_size));
         break;
     }
 
