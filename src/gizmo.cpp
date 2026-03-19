@@ -54,8 +54,8 @@ HMM_Vec2 line_closest_point(HMM_Vec2 start, HMM_Vec2 end, HMM_Vec2 pt)
     return HMM_Add(start, HMM_MulV2F(line, d));
 }
 
-///////////////////////////////////////////////
-///// Gizmo functions /////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////
+///// Gizmo functions ////////////////////////////////////////////////////////////////////
 Gizmo::Gizmo(float scale)
 {
     origin = HMM_V3(0.0f, 0.0f, 0.0f);
@@ -71,7 +71,7 @@ void Gizmo::select_axis(const HMM_Mat4& mvp, float screen_w, float screen_h, flo
     update_screen_axes(mvp, screen_w, screen_h);
     std::array<HMM_Vec2,3> screen_gum = {screen_x, screen_y, screen_z};
     HMM_Vec2 mouse_pos = HMM_V2(mouse_x, mouse_y);
-    printf("MousePos: %.2f, %.2f\n", mouse_x, mouse_y);
+
     float min_dist = screen_w * 2;
     int selected = -1;
 
@@ -79,8 +79,7 @@ void Gizmo::select_axis(const HMM_Mat4& mvp, float screen_w, float screen_h, flo
     {
         HMM_Vec2 axis_closest = line_closest_point(screen_orig, screen_orig + screen_gum[i], mouse_pos);
         float pixel_dist = std::sqrt((axis_closest.X - mouse_pos.X) * (axis_closest.X - mouse_pos.X) + (axis_closest.Y - mouse_pos.Y) * (axis_closest.Y - mouse_pos.Y));
-        printf("Screen orig at %i: %.2f, %.2f\n", i, screen_orig.X, screen_orig.Y);
-        printf("pixel dist at %i: %.2f\n", i, pixel_dist);
+
         if (pixel_dist < min_dist && pixel_dist < 10.0f)
         {
             selected = i;
@@ -89,6 +88,49 @@ void Gizmo::select_axis(const HMM_Mat4& mvp, float screen_w, float screen_h, flo
     }
     printf("Selected axis: %i\n", selected);
     fflush(stdout);
+
+    switch (selected)
+    {
+    case -1:
+        active_axis = ActiveAxis::None;
+        break;
+    case 0:
+        active_axis = ActiveAxis::X;
+        break;
+    case 1:
+        active_axis = ActiveAxis::Y;
+        break;
+    case 2:
+        active_axis = ActiveAxis::Z;
+        break;
+    }
+}
+
+void Gizmo::drag_axis(float mouse_dx, float mouse_dy, float screen_w, float screen_h)
+{
+    HMM_Vec3 dragging_axis_wrld = {};
+    HMM_Vec2 dragging_axis_scr = {};
+    switch (active_axis)
+    {
+    case ActiveAxis::X:
+        dragging_axis_wrld = x_axis;
+        dragging_axis_scr = screen_x;
+        break;
+    case ActiveAxis::Y:
+        dragging_axis_wrld = y_axis;
+        dragging_axis_scr = screen_y;
+        break;
+    case ActiveAxis::Z:
+        dragging_axis_wrld = z_axis;
+        dragging_axis_scr = screen_z;
+        break;
+    default:
+        break;
+    }
+    mouse_dx /= screen_w;
+    mouse_dy /= screen_h;
+    float drag_amount = HMM_DotV2(dragging_axis_scr, HMM_V2(mouse_dx,mouse_dy));
+    origin = HMM_Add(origin, HMM_MulV3F(dragging_axis_wrld, drag_amount));
 }
 
 void Gizmo::update_screen_axes(const HMM_Mat4 &mvp, float screen_w, float screen_h)

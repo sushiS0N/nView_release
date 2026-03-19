@@ -1112,17 +1112,17 @@ void NURBS_surface::update_srf_cp(int index, HMM_Vec3 new_pos)
 
     // Update control point
     control_points[index*3] = new_pos.X;
-    // keep Y for now
+    control_points[index*3+1] = new_pos.Y; 
     control_points[index*3+2] = new_pos.Z;
 
     // Update colour points
     color_cp[cp_index] = new_pos.X;
-    // keep Y
+    color_cp[cp_index + 1] = new_pos.Y;
     color_cp[cp_index + 2] = new_pos.Z;
 
     // Update weights
     weighted_points[wp_index] = color_cp[cp_index]*weights[index];
-    // keep Y
+    weighted_points[wp_index+1] = color_cp[cp_index+1]*weights[index];
     weighted_points[wp_index+2] = color_cp[cp_index+2]*weights[index];
     // keep same weight 
 

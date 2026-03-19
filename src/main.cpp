@@ -394,6 +394,7 @@ static void render_ui()
     case MODE_EDIT_SURFACE:
         ImGui::Text("RMB + scroll - orbit and zoom");
         ImGui::Text("LMB - drag points");
+        if(ImGui::Checkbox("Gumball - g", &interaction.gumball_mode))
         if (ImGui::Button("Reset"))
         {
             surface = std::make_unique<NURBS_surface>(srf_cp, u_knots, v_knots, 3, 4, 4, 20, srf_weights);
@@ -652,16 +653,18 @@ void event(const sapp_event *ev)
             }
             else if(interaction.gumball_mode)
             {
-                update_mouse_pos(ev);
+                update_mouse_pos(ev);   
+                int closest_idx = closest_cp_idx(bspline->control_points, state.mvp);
+                if(closest_idx >= 0)
+                {
+                    interaction.selected_cp_index = closest_idx;
+                    interaction.selected_cp_pos = closest_cp_pos(bspline->control_points, interaction.selected_cp_index);
+                    gumball->origin = interaction.selected_cp_pos;
+                }
+
                 gumball->select_axis(state.mvp, sapp_widthf(), sapp_heightf(), interaction.mouse_x, interaction.mouse_y);
-            }
-            else
-            {
-                interaction.dragging = true;
-                update_mouse_pos(ev);
-                interaction.selected_cp_index = closest_cp_idx(bspline->control_points, state.mvp); 
-                if(interaction.selected_cp_index >= 0) interaction.selected_cp_pos = closest_cp_pos(bspline->control_points, interaction.selected_cp_index);  
-                gumball->origin = interaction.selected_cp_pos;
+                if (gumball->active_axis != ActiveAxis::None)
+                    interaction.dragging = true;
             }
         }
         else if (ev->type == SAPP_EVENTTYPE_MOUSE_UP && ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
@@ -674,12 +677,10 @@ void event(const sapp_event *ev)
             {
                 state.buf_update_flag = true;
                 update_mouse_pos(ev);
-                if (interaction.selected_cp_index != -1)
-                {
-                    move_crv_pt(interaction.selected_cp_index, interaction.mouse_ray, camera->calculate_position());
-                    interaction.selected_cp_pos = closest_cp_pos(bspline->control_points, interaction.selected_cp_index);
-                    gumball->origin = interaction.selected_cp_pos;
-                }
+                gumball->drag_axis(ev->mouse_dx,ev->mouse_dy, sapp_widthf(), sapp_heightf());
+                printf("Selected cpi:  %i\n", interaction.selected_cp_index);
+                fflush(stdout);
+                bspline->update_cp(interaction.selected_cp_index, gumball->origin);
             }
             if(interaction.insert_knot)
             {
@@ -694,11 +695,21 @@ void event(const sapp_event *ev)
     case MODE_EDIT_SURFACE:
         if (ev->type == SAPP_EVENTTYPE_MOUSE_DOWN && ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
         {
-            interaction.dragging = true;
-            update_mouse_pos(ev);
-            interaction.selected_cp_index = closest_cp_idx(surface->control_points, state.mvp); 
-            if(interaction.selected_cp_index >= 0) interaction.selected_cp_pos = closest_cp_pos(surface->control_points, interaction.selected_cp_index); 
-            gumball->origin = interaction.selected_cp_pos;
+            if(interaction.gumball_mode)
+            {
+                update_mouse_pos(ev);   
+                int closest_idx = closest_cp_idx(surface->control_points, state.mvp);
+                if(closest_idx >= 0)
+                {
+                    interaction.selected_cp_index = closest_idx;
+                    interaction.selected_cp_pos = closest_cp_pos(surface->control_points, interaction.selected_cp_index);
+                    gumball->origin = interaction.selected_cp_pos;
+                }
+
+                gumball->select_axis(state.mvp, sapp_widthf(), sapp_heightf(), interaction.mouse_x, interaction.mouse_y);
+                if (gumball->active_axis != ActiveAxis::None)
+                    interaction.dragging = true;
+            }
         }
         else if (ev->type == SAPP_EVENTTYPE_MOUSE_UP && ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
         {
@@ -710,12 +721,12 @@ void event(const sapp_event *ev)
             {
                 state.buf_update_flag = true;
                 update_mouse_pos(ev);
-                if (interaction.selected_cp_index != -1)
-                {
-                    move_srf_pt(interaction.selected_cp_index, interaction.mouse_ray, camera->calculate_position());
-                    interaction.selected_cp_pos = closest_cp_pos(surface->control_points, interaction.selected_cp_index);
-                    gumball->origin = interaction.selected_cp_pos;
-                }
+                gumball->drag_axis(ev->mouse_dx,ev->mouse_dy, sapp_widthf(), sapp_heightf());
+                printf("Selected cpi:  %i\n", interaction.selected_cp_index);
+                fflush(stdout);
+                surface->update_srf_cp(interaction.selected_cp_index, gumball->origin);
+
+
             }
         }
         camera->handle_events(ev);
@@ -832,7 +843,7 @@ void init()
 
     // Initialize geometry
     world_axis = std::make_unique<Gizmo>(3.0f);
-    gumball = std::make_unique<Gizmo>(1.0f);
+    gumball = std::make_unique<Gizmo>();
 
     // NURBS spline
     bspline = std::make_unique<NURBS_spline>(bsp, 3, 1000);
