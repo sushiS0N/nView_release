@@ -1,6 +1,7 @@
 #pragma once
 #include "HandmadeMath.h"
 #include <array>
+#include <vector>
 
 enum class ActiveAxis {None, X, Y, Z};
 
@@ -11,7 +12,7 @@ public:
     HMM_Mat4 gumball_mvp;
     float world_scale;
     ActiveAxis active_axis = ActiveAxis::None;
-    Gizmo(float scale = 1.0f);
+    Gizmo();
     ~Gizmo();
 
     void generate_gizmo();
@@ -25,9 +26,10 @@ public:
 
 private:
     // Axis indicator data
-    sg_buffer axis_gizmo_buffer;
-    sg_bindings axis_gizmo_bind;
-    std::array<float, 42> axis_gizmo_verts;
+    sg_buffer gizmo_vtx_buf, gizmo_idx_buf;
+    sg_bindings gizmo_bind;
+    std::vector<float> gizmo_verts;
+    std::vector<uint16_t> gizmo_indices;
 
     HMM_Vec2 screen_x, screen_y, screen_z, screen_orig;
     

@@ -330,7 +330,7 @@ static void print_status_text(float disp_w, float disp_h)
 static void render_ui()
 {
     ImGui::SetNextWindowPos(ImVec2(10,10), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(250,350), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(250,400), ImGuiCond_FirstUseEver);
     ImGui::PushFont(ui_font);
     ImGui::Begin("Menu", nullptr, ImGuiWindowFlags_NoMove);
     ImGui::Text("Application average %.3f ms/frame \n (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
@@ -345,7 +345,7 @@ static void render_ui()
 
     ImGui::Separator();
     switch (interaction.mode)
-    {
+    { 
     case MODE_VIEW:
         ImGui::Text("RMB - orbit\n");
         ImGui::Text("Scroll - zoom\n");
@@ -353,18 +353,19 @@ static void render_ui()
 
         break;
     case MODE_EDIT_CURVE:
-        if(ImGui::Checkbox("Gumball - g", &interaction.gumball_mode))
-        if(ImGui::Checkbox("Display Knots - k", &bspline->show_knots))
+        if(ImGui::Checkbox("Gumball - G", &interaction.gumball_mode))
+        if(ImGui::Checkbox("Display Knots - K", &bspline->show_knots))
         {
             state.buf_update_flag = true;
         }
-        if(ImGui::Checkbox("Display CP Influence - i", &bspline->show_influence))
+        if(ImGui::Checkbox("Display CP Influence - I", &bspline->show_influence))
         {
             state.buf_update_flag = true;
         }
-        ImGui::Checkbox("Add points - c", &interaction.add_pts);
-        ImGui::Checkbox("Insert knot - p", &interaction.insert_knot);
-        ImGui::Checkbox("Show bezier AABB - b", &interaction.show_bezier_aabb);
+        ImGui::Checkbox("Add points - C", &interaction.add_pts);
+        ImGui::Checkbox("Show bezier AABB - B", &interaction.show_bezier_aabb);
+        ImGui::Checkbox("Show knots - K", &bspline->show_knots);
+        ImGui::Checkbox("Insert knot - P", &interaction.insert_knot);
         if(ImGui::Button("Reset"))
         {
             bspline = std::make_unique<NURBS_spline>(bsp, 3, 1000);
@@ -450,7 +451,7 @@ void frame()
     simgui_render();
 
     // Draw axis indicator
-    sg_apply_pipeline(state.pip_lines);
+    sg_apply_pipeline(state.pip_triangles);
     world_axis->render_gizmo(mvp);
 
     switch (interaction.mode)
@@ -478,7 +479,7 @@ void frame()
         bspline->render_control_points(mvp);
 
         // Draw gumball
-        sg_apply_pipeline(state.pip_lines);
+        sg_apply_pipeline(state.pip_triangles);
         gumball->render_gizmo(gumball->set_gumball_mvp(camera->calculate_position(), state.view, state.proj, interaction.gumball_size));
 
         // Draw bspline markers
@@ -495,6 +496,7 @@ void frame()
         }
         if (interaction.show_bezier_aabb)
         {
+            bspline->show_aabb = true;
             sg_apply_pipeline(state.pip_lines);
             bspline->render_aabb(mvp);
         }
@@ -617,11 +619,13 @@ void event(const sapp_event *ev)
                 {
                     interaction.show_bezier_aabb = false;
                     bspline->show_aabb = false;
+                    state.buf_update_flag = true;
                 }
                 else
                 {
                     interaction.show_bezier_aabb = true;
                     bspline->show_aabb = true;
+                    state.buf_update_flag = true;
                 }
             }
             else if (ev->key_code == SAPP_KEYCODE_MINUS)
@@ -842,7 +846,7 @@ void init()
     state.bind.samplers[SMP_smp] = sg_make_sampler(sampler_desc);
 
     // Initialize geometry
-    world_axis = std::make_unique<Gizmo>(3.0f);
+    world_axis = std::make_unique<Gizmo>();
     gumball = std::make_unique<Gizmo>();
 
     // NURBS spline
@@ -906,7 +910,7 @@ void init()
     mat_desc.layout.attrs[ATTR_shd_matcap_color0].format = SG_VERTEXFORMAT_FLOAT4;
     mat_desc.primitive_type = SG_PRIMITIVETYPE_TRIANGLES;
     mat_desc.index_type = SG_INDEXTYPE_UINT16;
-    mat_desc.cull_mode = SG_CULLMODE_FRONT;
+    //mat_desc.cull_mode = SG_CULLMODE_FRONT;
     mat_desc.label = "matcap_pipleline";
     state.pip_matcap = sg_make_pipeline(mat_desc);
 

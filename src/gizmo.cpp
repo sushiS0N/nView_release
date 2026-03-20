@@ -8,6 +8,18 @@
 #include <cmath>
 #include <algorithm>
 
+// static uint32_t _sshape_rand_color(uint32_t* xorshift_state) {
+//     // xorshift32
+//     uint32_t x = *xorshift_state;
+//     x ^= x<<13;
+//     x ^= x>>17;
+//     x ^= x<<5;
+//     *xorshift_state = x;
+//     // rand => bright color with alpha 1.0
+//     x |= 0xFF000000;
+//     return x;
+// }
+
 // Utilities
 HMM_Mat4 extract_rotation(const HMM_Mat4& view)
 {
@@ -54,14 +66,36 @@ HMM_Vec2 line_closest_point(HMM_Vec2 start, HMM_Vec2 end, HMM_Vec2 pt)
     return HMM_Add(start, HMM_MulV2F(line, d));
 }
 
+void make_cylinder(HMM_Vec3 origin, HMM_Vec3 h, HMM_Vec3 right, float height, float radius, float slices, sg_color col)
+{
+    const float two_pi = 2.0f * HMM_PI;
+    // Orient towards h - cylinder axis
+    HMM_Vec3 left = HMM_Cross(right, h);
+    HMM_Mat4 rot = HMM_M4D(0.0f);
+    rot.Columns[0] = HMM_V4(right.X, right.Y, right.Z, 0.0f);
+    rot.Columns[1] = HMM_V4(h.X, h.Y, h.Z, 0.0f);
+    rot.Columns[2] = HMM_V4(left.X, left.Y, left.Z, 0.0f);
+    rot.Columns[3] = HMM_V4(0.0f, 0.0f, 0.0f, 1.0f);
+
+    for (int slice = 0; slice <= slices; slice++) {
+        float slice_angle = (two_pi * slice) / slices;
+        float sin_slice = sinf(slice_angle);
+        float cos_slice = cosf(slice_angle);
+        HMM_Vec3 pos_base = HMM_V3(sin_slice * radius, 1.0f, cos_slice * radius);
+        HMM_Vec3 pos_top = HMM_V3(sin_slice * radius, 1.0f, cos_slice * radius);
+
+        /// matrix roation
+    }
+}
+
 //////////////////////////////////////////////////////////////////////////////////////////////
 ///// Gizmo functions ////////////////////////////////////////////////////////////////////
-Gizmo::Gizmo(float scale)
+Gizmo::Gizmo()
 {
     origin = HMM_V3(0.0f, 0.0f, 0.0f);
-    x_axis = HMM_MulV3F(HMM_V3(1.0f, 0.0f, 0.0f), scale);
-    y_axis = HMM_MulV3F(HMM_V3(0.0f, 1.0f, 0.0f), scale);
-    z_axis = HMM_MulV3F(HMM_V3(0.0f, 0.0f, 1.0f), scale);
+    x_axis = HMM_V3(1.0f, 0.0f, 0.0f);
+    y_axis = HMM_V3(0.0f, 1.0f, 0.0f);
+    z_axis = HMM_V3(0.0f, 0.0f, 1.0f);
     generate_gizmo();
     create_axis_buffer();
 }
@@ -157,26 +191,7 @@ void Gizmo::update_screen_axes(const HMM_Mat4 &mvp, float screen_w, float screen
     screen_z = HMM_Sub(proj_z_tip, screen_orig);
 }
 
-void Gizmo::generate_gizmo()
-{
-    std::array<sg_color,4> colors = {sg_red, sg_green, sg_blue, sg_white_smoke};
-    std::array<HMM_Vec3,3> axes = {x_axis, y_axis, z_axis};
-    auto insert_pt = [&](int idx, int col_idx, HMM_Vec3 pt){
-        axis_gizmo_verts[idx] = pt.X;
-        axis_gizmo_verts[idx+1] = pt.Y;
-        axis_gizmo_verts[idx+2] = pt.Z;
-        axis_gizmo_verts[idx+3] = colors[col_idx].r;
-        axis_gizmo_verts[idx+4] = colors[col_idx].g;
-        axis_gizmo_verts[idx+5] = colors[col_idx].b;
-        axis_gizmo_verts[idx+6] = colors[col_idx].a;
-    };
-    for (int i = 0; i < 3; i++)
-    {
-        int idx = i * 14;
-        insert_pt(idx, 3, origin);
-        insert_pt(idx+7, i, axes[i]);        
-    }
-}
+
 
 // Render functions
 HMM_Mat4 Gizmo::set_gumball_mvp(const HMM_Vec3& cam_pos, const HMM_Mat4& view, const HMM_Mat4& proj, float gumball_size)
@@ -190,31 +205,129 @@ HMM_Mat4 Gizmo::set_gumball_mvp(const HMM_Vec3& cam_pos, const HMM_Mat4& view, c
     return gumball_mvp;
 }
 
+void Gizmo::generate_gizmo()
+{
+    std::array<sg_color,4> colors = {sg_red, sg_green, sg_blue, sg_white_smoke};
+    std::array<HMM_Vec3,3> axes = {x_axis, y_axis, z_axis};
+    const float two_pi = 2.0f * HMM_PI;
+    float radius = 0.05f;
+    int slices = 6;
+    gizmo_verts.resize(slices * 2 * 7 * 3, 0.0f);
+    gizmo_indices.resize(slices * 6 * 3, 0);
+
+    auto insert_pt = [&](int idx, int col_idx, HMM_Vec3 pt){
+        gizmo_verts[idx] = pt.X;
+        gizmo_verts[idx+1] = pt.Y;
+        gizmo_verts[idx+2] = pt.Z;
+        gizmo_verts[idx+3] = colors[col_idx].r;
+        gizmo_verts[idx+4] = colors[col_idx].g;
+        gizmo_verts[idx+5] = colors[col_idx].b;
+        gizmo_verts[idx+6] = colors[col_idx].a;
+    };
+
+    // Generate a cylinder for each axis
+    // Vertices
+    for (int i = 0; i < 3; i++)
+    {
+        int cyl_idx = i * 2 * 7 * slices;
+        // Cylinder orientation
+        const HMM_Vec3 h = axes[i];
+        const HMM_Vec3 right = (i<2) ? axes[i+1] : axes[i-1];
+        const HMM_Vec3 left = HMM_Cross(right, h);
+
+        HMM_Mat4 rot = HMM_M4D(0.0f);
+        rot.Columns[0] = HMM_V4(right.X, right.Y, right.Z, 0.0f);
+        rot.Columns[1] = HMM_V4(h.X, h.Y, h.Z, 0.0f);
+        rot.Columns[2] = HMM_V4(left.X, left.Y, left.Z, 0.0f);
+        rot.Columns[3] = HMM_V4(0.0f, 0.0f, 0.0f, 1.0f);
+
+        // Generate cylinder pole
+        for (int slice = 0; slice < slices; slice++)
+        {
+            int s_idx = cyl_idx + slice * 14;
+            float slice_angle = (two_pi * slice) / slices;
+            float sin_slice = sinf(slice_angle);
+            float cos_slice = cosf(slice_angle);
+            HMM_Vec4 pos_base = HMM_V4(sin_slice * radius, 0.0f, cos_slice * radius,0.0f);
+            HMM_Vec4 pos_top = HMM_V4(sin_slice * radius, 1.0f, cos_slice * radius, 0.0f);
+            
+            HMM_Vec4 rot_base = HMM_MulM4V4(rot, pos_base);
+            HMM_Vec4 rot_top = HMM_MulM4V4(rot, pos_top);
+
+            insert_pt(s_idx, i, HMM_V3(rot_base.X, rot_base.Y, rot_base.Z));
+            insert_pt(s_idx + 7, i, HMM_V3(rot_top.X, rot_top.Y, rot_top.Z));
+        }
+
+        // Indices
+        for (int j = 0; j < slices; j++)
+        {
+            int write_pos = i * slices * 6 + j * 6;
+            int bv = i * slices * 2 + j * 2;
+
+            if (j == (slices - 1))
+            {
+                // Tri 1 CCW
+                gizmo_indices[write_pos] = bv;
+                gizmo_indices[write_pos + 1] = i*slices*2; // cyl[0]
+                gizmo_indices[write_pos + 2] = bv + 1;
+                // Tri 2 CCW
+                gizmo_indices[write_pos + 3] = i*slices*2; // cyl[0]
+                gizmo_indices[write_pos + 4] = i*slices*2+1; // cyl[1]
+                gizmo_indices[write_pos + 5] = bv + 1;
+            }
+
+            else
+            {
+                // Tri 1 CCW
+                gizmo_indices[write_pos] = bv;
+                gizmo_indices[write_pos + 1] = bv + 2;
+                gizmo_indices[write_pos + 2] = bv + 1;
+                // Tri 2 CCW
+                gizmo_indices[write_pos + 3] = bv + 2;
+                gizmo_indices[write_pos + 4] = bv + 3;
+                gizmo_indices[write_pos + 5] = bv + 1;
+            }
+        }
+    }
+}
+
 void Gizmo::create_axis_buffer()
 {
-    sg_buffer_desc vbuf_desc={};
-    vbuf_desc.data = SG_RANGE(axis_gizmo_verts);
-    vbuf_desc.label = "axis_gizmo";
-    axis_gizmo_buffer = sg_make_buffer(vbuf_desc);
+    // Vertex buffer
+    sg_buffer_desc vbuf_desc = {};
+    vbuf_desc.data = sg_range{gizmo_verts.data(), gizmo_verts.size() * sizeof(float)}; 
+    vbuf_desc.label = "Gizmo_vertices";
+    gizmo_vtx_buf = sg_make_buffer(vbuf_desc);
 
-    axis_gizmo_bind = {};
-    axis_gizmo_bind.vertex_buffers[0] = this->axis_gizmo_buffer;
+    // Index buffer
+    sg_buffer_desc ibuf_desc = {};
+    ibuf_desc.usage.index_buffer = true;
+    ibuf_desc.data.ptr = gizmo_indices.data();
+    ibuf_desc.data.size = gizmo_indices.size() * sizeof(uint16_t);
+    ibuf_desc.label = "Gizmo_indices";
+    gizmo_idx_buf = sg_make_buffer(ibuf_desc);
+
+    gizmo_bind = {};
+    gizmo_bind.vertex_buffers[0] = gizmo_vtx_buf;
+    gizmo_bind.index_buffer = gizmo_idx_buf;
 }
 
 void Gizmo::render_gizmo(const HMM_Mat4 &mvp)
 {
+    sg_apply_bindings(gizmo_bind);
+
     // Struct for shader
     vs_params_t params = {};
     memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 1.0f;
     params.draw_mode = 0;
+    params.point_size = 1.0f;
 
-    sg_apply_bindings(axis_gizmo_bind);
     sg_apply_uniforms(0, SG_RANGE_REF(params));
-    sg_draw(0, 6, 1);
+    sg_draw(0, gizmo_indices.size(), 1);
 }
 
 Gizmo::~Gizmo()
 {
-    sg_destroy_buffer(axis_gizmo_buffer);
+    sg_destroy_buffer(gizmo_vtx_buf);
+    sg_destroy_buffer(gizmo_idx_buf);
 }
