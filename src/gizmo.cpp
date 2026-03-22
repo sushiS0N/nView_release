@@ -66,38 +66,24 @@ HMM_Vec2 line_closest_point(HMM_Vec2 start, HMM_Vec2 end, HMM_Vec2 pt)
     return HMM_Add(start, HMM_MulV2F(line, d));
 }
 
-void make_cylinder(HMM_Vec3 origin, HMM_Vec3 h, HMM_Vec3 right, float height, float radius, float slices, sg_color col)
-{
-    const float two_pi = 2.0f * HMM_PI;
-    // Orient towards h - cylinder axis
-    HMM_Vec3 left = HMM_Cross(right, h);
-    HMM_Mat4 rot = HMM_M4D(0.0f);
-    rot.Columns[0] = HMM_V4(right.X, right.Y, right.Z, 0.0f);
-    rot.Columns[1] = HMM_V4(h.X, h.Y, h.Z, 0.0f);
-    rot.Columns[2] = HMM_V4(left.X, left.Y, left.Z, 0.0f);
-    rot.Columns[3] = HMM_V4(0.0f, 0.0f, 0.0f, 1.0f);
-
-    for (int slice = 0; slice <= slices; slice++) {
-        float slice_angle = (two_pi * slice) / slices;
-        float sin_slice = sinf(slice_angle);
-        float cos_slice = cosf(slice_angle);
-        HMM_Vec3 pos_base = HMM_V3(sin_slice * radius, 1.0f, cos_slice * radius);
-        HMM_Vec3 pos_top = HMM_V3(sin_slice * radius, 1.0f, cos_slice * radius);
-
-        /// matrix roation
-    }
-}
 
 //////////////////////////////////////////////////////////////////////////////////////////////
 ///// Gizmo functions ////////////////////////////////////////////////////////////////////
 Gizmo::Gizmo()
 {
+    show = true;
     origin = HMM_V3(0.0f, 0.0f, 0.0f);
     x_axis = HMM_V3(1.0f, 0.0f, 0.0f);
     y_axis = HMM_V3(0.0f, 1.0f, 0.0f);
     z_axis = HMM_V3(0.0f, 0.0f, 1.0f);
     generate_gizmo();
     create_axis_buffer();
+}
+
+void Gizmo::reset()
+{
+    origin = HMM_V3(0.0f, 0.0f, 0.0f);
+    show = false;
 }
 
 void Gizmo::select_axis(const HMM_Mat4& mvp, float screen_w, float screen_h, float mouse_x, float mouse_y)
@@ -210,8 +196,8 @@ void Gizmo::generate_gizmo()
     std::array<sg_color,4> colors = {sg_red, sg_green, sg_blue, sg_white_smoke};
     std::array<HMM_Vec3,3> axes = {x_axis, y_axis, z_axis};
     const float two_pi = 2.0f * HMM_PI;
-    float radius = 0.05f;
-    int slices = 6;
+    float radius = 0.03f;
+    int slices = 8;
     gizmo_verts.resize(slices * 2 * 7 * 3, 0.0f);
     gizmo_indices.resize(slices * 6 * 3, 0);
 
@@ -254,7 +240,7 @@ void Gizmo::generate_gizmo()
             HMM_Vec4 rot_base = HMM_MulM4V4(rot, pos_base);
             HMM_Vec4 rot_top = HMM_MulM4V4(rot, pos_top);
 
-            insert_pt(s_idx, i, HMM_V3(rot_base.X, rot_base.Y, rot_base.Z));
+            insert_pt(s_idx, 3, HMM_V3(rot_base.X, rot_base.Y, rot_base.Z));
             insert_pt(s_idx + 7, i, HMM_V3(rot_top.X, rot_top.Y, rot_top.Z));
         }
 

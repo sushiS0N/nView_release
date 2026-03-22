@@ -11,10 +11,12 @@ public:
     HMM_Vec3 origin, x_axis, y_axis, z_axis;
     HMM_Mat4 gumball_mvp;
     float world_scale;
+    bool show = false;
     ActiveAxis active_axis = ActiveAxis::None;
     Gizmo();
     ~Gizmo();
 
+    void reset();
     void generate_gizmo();
     void drag_axis(float mouse_dx, float mouse_dy, float screen_w, float screen_h);
     void select_axis(const HMM_Mat4& mvp, float screen_w, float screen_h, float mouse_x, float mouse_y);

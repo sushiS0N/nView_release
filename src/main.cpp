@@ -33,8 +33,8 @@
 // + ADD live weight edit
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // Resolution macros        
-#define RESOLUTION_X 1280.0f 
-#define RESOLUTION_Y 960.0f 
+#define RESOLUTION_X 1440.0f 
+#define RESOLUTION_Y 1080.0f 
 #define FOV 60.0f * (HMM_PI / 180.0f)
 #define MAX_FILE_SIZE 1024*1024
 
@@ -330,7 +330,7 @@ static void print_status_text(float disp_w, float disp_h)
 static void render_ui()
 {
     ImGui::SetNextWindowPos(ImVec2(10,10), ImGuiCond_Always);
-    ImGui::SetNextWindowSize(ImVec2(250,400), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(270,400), ImGuiCond_FirstUseEver);
     ImGui::PushFont(ui_font);
     ImGui::Begin("Menu", nullptr, ImGuiWindowFlags_NoMove);
     ImGui::Text("Application average %.3f ms/frame \n (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
@@ -375,7 +375,7 @@ static void render_ui()
 
         // Insert knots
         ImGui::Separator();
-        ImGui::Text("%s", bspline->print_knots().c_str());
+        ImGui::TextWrapped("%s", bspline->print_knots().c_str());
         if(ImGui::Button("Add knot"))
         {
             bspline->insert_knot(interaction.knot_value,1);
@@ -383,7 +383,7 @@ static void render_ui()
         }        
         ImGui::SameLine();
         ImGui::SetNextItemWidth(120);
-        ImGui::SliderFloat("[0,1]", &interaction.knot_value, 0.0f, 1.0f, "%.2f", 0);
+        ImGui::SliderFloat("[0.1,0.9]", &interaction.knot_value, 0.1f, 0.9f, "%.2f", 0);
 
         // Extract bezier
         if(ImGui::Button("Convert to bezier"))
@@ -395,8 +395,8 @@ static void render_ui()
     case MODE_EDIT_SURFACE:
         ImGui::Text("RMB + scroll - orbit and zoom");
         ImGui::Text("LMB - drag points");
-        if(ImGui::Checkbox("Gumball - g", &interaction.gumball_mode))
-        if (ImGui::Button("Reset"))
+        ImGui::Checkbox("Gumball - g", &interaction.gumball_mode);
+        if(ImGui::Button("Reset"))
         {
             surface = std::make_unique<NURBS_surface>(srf_cp, u_knots, v_knots, 3, 4, 4, 20, srf_weights);
             surface->generate_mesh();
@@ -406,6 +406,7 @@ static void render_ui()
                 surface->mesh_bind.views[VIEW_tex] = state.bind.views[VIEW_tex];
                 surface->mesh_bind.samplers[SMP_smp] = state.bind.samplers[SMP_smp];
             }
+            gumball->reset();
             state.buf_update_flag = true;
         }
         break;
@@ -479,9 +480,11 @@ void frame()
         bspline->render_control_points(mvp);
 
         // Draw gumball
-        sg_apply_pipeline(state.pip_triangles);
-        gumball->render_gizmo(gumball->set_gumball_mvp(camera->calculate_position(), state.view, state.proj, interaction.gumball_size));
-
+        if(gumball->show)
+        {
+            sg_apply_pipeline(state.pip_triangles);
+            gumball->render_gizmo(gumball->set_gumball_mvp(camera->calculate_position(), state.view, state.proj, interaction.gumball_size));
+        }
         // Draw bspline markers
         if (bspline->show_knots)
         {
@@ -516,8 +519,11 @@ void frame()
         surface->render_control_polygon(mvp);
 
         // Draw gumball
-        sg_apply_pipeline(state.pip_lines);
-        gumball->render_gizmo(gumball->set_gumball_mvp(camera->calculate_position(), state.view, state.proj, interaction.gumball_size));
+        if(gumball->show)
+        {
+            sg_apply_pipeline(state.pip_triangles);
+            gumball->render_gizmo(gumball->set_gumball_mvp(camera->calculate_position(), state.view, state.proj, interaction.gumball_size));
+        }
         break;
     }
 
@@ -544,6 +550,7 @@ void event(const sapp_event *ev)
         else if (ev->key_code == SAPP_KEYCODE_3)
         {
             interaction.mode = MODE_EDIT_SURFACE;
+            gumball->reset();
         }
         else if (ev->key_code == SAPP_KEYCODE_ESCAPE)
         {
@@ -596,9 +603,15 @@ void event(const sapp_event *ev)
             else if (ev->key_code == SAPP_KEYCODE_G)
             {
                 if (interaction.gumball_mode)
+                {
                     interaction.gumball_mode = false;
+                    gumball->reset();
+                }
                 else
+                {
                     interaction.gumball_mode = true;
+                    
+                }                    
             }
             else if (ev->key_code == SAPP_KEYCODE_P)
             {
@@ -665,7 +678,7 @@ void event(const sapp_event *ev)
                     interaction.selected_cp_pos = closest_cp_pos(bspline->control_points, interaction.selected_cp_index);
                     gumball->origin = interaction.selected_cp_pos;
                 }
-
+                gumball->show = true;
                 gumball->select_axis(state.mvp, sapp_widthf(), sapp_heightf(), interaction.mouse_x, interaction.mouse_y);
                 if (gumball->active_axis != ActiveAxis::None)
                     interaction.dragging = true;
@@ -682,8 +695,6 @@ void event(const sapp_event *ev)
                 state.buf_update_flag = true;
                 update_mouse_pos(ev);
                 gumball->drag_axis(ev->mouse_dx,ev->mouse_dy, sapp_widthf(), sapp_heightf());
-                printf("Selected cpi:  %i\n", interaction.selected_cp_index);
-                fflush(stdout);
                 bspline->update_cp(interaction.selected_cp_index, gumball->origin);
             }
             if(interaction.insert_knot)
@@ -697,7 +708,23 @@ void event(const sapp_event *ev)
         camera->handle_events(ev);
         break;
     case MODE_EDIT_SURFACE:
-        if (ev->type == SAPP_EVENTTYPE_MOUSE_DOWN && ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
+        if (ev->type == SAPP_EVENTTYPE_KEY_DOWN)
+        {
+            if (ev->key_code == SAPP_KEYCODE_G)
+            {
+                if (interaction.gumball_mode)
+                {
+                    interaction.gumball_mode = false;
+                   
+                }
+                else
+                {
+                    interaction.gumball_mode = true;
+                    gumball->show;
+                }  
+            }
+        }
+        else if (ev->type == SAPP_EVENTTYPE_MOUSE_DOWN && ev->mouse_button == SAPP_MOUSEBUTTON_LEFT)
         {
             if(interaction.gumball_mode)
             {
@@ -709,7 +736,7 @@ void event(const sapp_event *ev)
                     interaction.selected_cp_pos = closest_cp_pos(surface->control_points, interaction.selected_cp_index);
                     gumball->origin = interaction.selected_cp_pos;
                 }
-
+                gumball->show = true;
                 gumball->select_axis(state.mvp, sapp_widthf(), sapp_heightf(), interaction.mouse_x, interaction.mouse_y);
                 if (gumball->active_axis != ActiveAxis::None)
                     interaction.dragging = true;
@@ -719,6 +746,7 @@ void event(const sapp_event *ev)
         {
             interaction.dragging = false;
         }
+        
         else if (ev->type == SAPP_EVENTTYPE_MOUSE_MOVE)
         {
             if (interaction.dragging)
@@ -729,10 +757,9 @@ void event(const sapp_event *ev)
                 printf("Selected cpi:  %i\n", interaction.selected_cp_index);
                 fflush(stdout);
                 surface->update_srf_cp(interaction.selected_cp_index, gumball->origin);
-
-
             }
         }
+
         camera->handle_events(ev);
         break;
     }
