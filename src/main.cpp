@@ -33,8 +33,8 @@
 // + ADD live weight edit
 //!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 // Resolution macros        
-#define RESOLUTION_X 1440.0f 
-#define RESOLUTION_Y 1080.0f 
+#define RESOLUTION_X 2560.0f 
+#define RESOLUTION_Y 1440.0f 
 #define FOV 60.0f * (HMM_PI / 180.0f)
 #define MAX_FILE_SIZE 1024*1024
 
@@ -49,9 +49,9 @@ std::vector<float> srf_cp = {
     // Row 0 (j=0)
     0.0f, 0.0f, 0.0f,    2.0f, 1.0f, 0.0f,    4.0f, 2.0f, 0.0f,    8.0f, 0.0f, 0.0f,
     // Row 1 (j=1)
-    -2.0f, 3.0f, 1.0f,    2.0f, 1.0f, 1.0f,    4.0f, 0.0f, 1.0f,    8.0f, 0.0f, 1.0f,
+    -2.0f, 2.5f, 1.0f,    2.0f, 1.0f, 1.0f,    4.0f, 0.0f, 1.0f,    8.0f, 0.0f, 1.0f,
     // Row 2 (j=2)
-    -2.0f, 3.0f, 2.0f,    2.0f, 1.0f, 2.0f,    4.0f, 0.0f, 2.0f,    8.0f, 0.0f, 2.0f,
+    -2.0f, 2.5f, 2.0f,    2.0f, 1.0f, 2.0f,    4.0f, 0.0f, 2.0f,    8.0f, 0.0f, 2.0f,
     // Row 3 (j=3)
     0.0f, 0.0f, 3.0f,    2.0f, 1.0f, 3.0f,    4.0f, 2.0f, 3.0f,    8.0f, 0.0f, 3.0f,
 };
@@ -371,6 +371,11 @@ static void render_ui()
             bspline = std::make_unique<NURBS_spline>(bsp, 3, 1000);
             bspline->generate(0);
             state.buf_update_flag = true;
+
+            gumball->reset();
+
+            interaction.gumball_mode = false;
+            interaction.insert_knot = false;
         }
 
         // Insert knots
@@ -407,6 +412,8 @@ static void render_ui()
                 surface->mesh_bind.samplers[SMP_smp] = state.bind.samplers[SMP_smp];
             }
             gumball->reset();
+            interaction.gumball_mode = false;
+
             state.buf_update_flag = true;
         }
         break;
@@ -428,7 +435,7 @@ void frame()
     sfetch_dowork();
 
     // Calculate MVP matix
-    HMM_Mat4 proj = HMM_Perspective_RH_NO(FOV, sapp_width() / sapp_height(), 0.01f, 100.0f);
+    HMM_Mat4 proj = HMM_Perspective_RH_NO(FOV, sapp_widthf() / sapp_heightf(), 0.01f, 100.0f);
     HMM_Mat4 view = camera->get_view_matrix();
     HMM_Mat4 model = HMM_M4D(1.0f);
     HMM_Mat4 mvp = HMM_MulM4(proj, HMM_MulM4(view, model));
@@ -550,6 +557,7 @@ void event(const sapp_event *ev)
         else if (ev->key_code == SAPP_KEYCODE_3)
         {
             interaction.mode = MODE_EDIT_SURFACE;
+            interaction.gumball_mode = false;
             gumball->reset();
         }
         else if (ev->key_code == SAPP_KEYCODE_ESCAPE)
@@ -585,12 +593,14 @@ void event(const sapp_event *ev)
                 if (bspline->show_influence)
                 {
                     bspline->show_influence = false;
+                    bspline->generate();
                     state.buf_update_flag = true;
                 }
                 else
                 {
-                    state.buf_update_flag = true;
                     bspline->show_influence = true;
+                    bspline->generate();
+                    state.buf_update_flag = true;
                 }
             }
             else if (ev->key_code == SAPP_KEYCODE_C)
@@ -610,7 +620,7 @@ void event(const sapp_event *ev)
                 else
                 {
                     interaction.gumball_mode = true;
-                    
+                    interaction.add_pts = false;
                 }                    
             }
             else if (ev->key_code == SAPP_KEYCODE_P)
@@ -622,6 +632,13 @@ void event(const sapp_event *ev)
                 }
                 else
                 {
+                    // Disable gumball
+                    interaction.gumball_mode = false;
+                    gumball->reset();
+
+                    // Disable point addition
+                    interaction.add_pts = false;
+
                     interaction.insert_knot = true;
                     bspline->show_pt_on_crv = true;
                 }

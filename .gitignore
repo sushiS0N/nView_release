@@ -12,6 +12,10 @@ cmake-build-debug/
 *.ipdb
 *.iobj
 *.tlog
+*.exe
+*.dll
+*.lib
+*.ilk
 
 # --- OS Metadata ---
 .DS_Store
