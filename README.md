@@ -4,6 +4,9 @@ A real-time NURBS curve and surface viewer built in C++ with interactive control
 
 ![C++](https://img.shields.io/badge/C++-11-blue) ![OpenGL](https://img.shields.io/badge/OpenGL-3.3-green)
 
+<img width="3840" height="2088" alt="Git_Page" src="https://github.com/user-attachments/assets/4acec6d7-7d52-450f-91df-eb36110c7c26" />
+
+
 ## Features
 
 - **NURBS curves** — Cox-de Boor evaluation, interactive control point dragging, knot visualization, basis function influence display
