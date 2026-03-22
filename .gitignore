@@ -6,7 +6,7 @@ build/
 out/
 cmake-build-debug/
 
-# --- C++ Temporary Files ---
+# C++ Temporary Files
 *.obj
 *.pdb
 *.ipdb
@@ -17,6 +17,9 @@ cmake-build-debug/
 *.lib
 *.ilk
 
-# --- OS Metadata ---
+# OS Metadata 
 .DS_Store
 Thumbs.db
+
+# Files with paths embedded
+src/shader.h
