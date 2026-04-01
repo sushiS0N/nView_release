@@ -47,10 +47,10 @@ HMM_Vec2 project_to_screen(const HMM_Mat4& mvp, float screen_w, float screen_h, 
     HMM_Vec4 world_pos = HMM_V4(pt.X, pt.Y, pt.Z, 1.0f);
     HMM_Vec4 clip_pos = HMM_MulM4V4(mvp, world_pos);
     HMM_Vec3 ndc = HMM_V3(clip_pos.X / clip_pos.W, clip_pos.Y / clip_pos.W, clip_pos.Z / clip_pos.W);
-    float screen_x = (ndc.X + 1.0f) * screen_w / 2.0f;
-    float screen_y = (1.0f - ndc.Y) * screen_h / 2.0f;
+    float screen_x_ = (ndc.X + 1.0f) * screen_w / 2.0f;
+    float screen_y_ = (1.0f - ndc.Y) * screen_h / 2.0f;
 
-    return HMM_V2(screen_x, screen_y);
+    return HMM_V2(screen_x_, screen_y_);
 }
 
 HMM_Vec2 line_closest_point(HMM_Vec2 start, HMM_Vec2 end, HMM_Vec2 pt)
@@ -71,25 +71,25 @@ HMM_Vec2 line_closest_point(HMM_Vec2 start, HMM_Vec2 end, HMM_Vec2 pt)
 ///// Gizmo functions ////////////////////////////////////////////////////////////////////
 Gizmo::Gizmo()
 {
-    show = true;
-    origin = HMM_V3(0.0f, 0.0f, 0.0f);
-    x_axis = HMM_V3(1.0f, 0.0f, 0.0f);
-    y_axis = HMM_V3(0.0f, 1.0f, 0.0f);
-    z_axis = HMM_V3(0.0f, 0.0f, 1.0f);
+    show_ = true;
+    origin_ = HMM_V3(0.0f, 0.0f, 0.0f);
+    x_axis_ = HMM_V3(1.0f, 0.0f, 0.0f);
+    y_axis_ = HMM_V3(0.0f, 1.0f, 0.0f);
+    z_axis_ = HMM_V3(0.0f, 0.0f, 1.0f);
     generate_gizmo();
-    create_axis_buffer();
+    create_gpubuffer();
 }
 
 void Gizmo::reset()
 {
-    origin = HMM_V3(0.0f, 0.0f, 0.0f);
-    show = false;
+    origin_ = HMM_V3(0.0f, 0.0f, 0.0f);
+    show_ = false;
 }
 
 void Gizmo::select_axis(const HMM_Mat4& mvp, float screen_w, float screen_h, float mouse_x, float mouse_y)
 {
     update_screen_axes(mvp, screen_w, screen_h);
-    std::array<HMM_Vec2,3> screen_gum = {screen_x, screen_y, screen_z};
+    std::array<HMM_Vec2,3> screen_gum = {screen_x_, screen_y_, screen_z_};
     HMM_Vec2 mouse_pos = HMM_V2(mouse_x, mouse_y);
 
     float min_dist = screen_w * 2;
@@ -97,7 +97,7 @@ void Gizmo::select_axis(const HMM_Mat4& mvp, float screen_w, float screen_h, flo
 
     for (int i = 0; i < screen_gum.size(); i++)
     {
-        HMM_Vec2 axis_closest = line_closest_point(screen_orig, screen_orig + screen_gum[i], mouse_pos);
+        HMM_Vec2 axis_closest = line_closest_point(screen_orig_, screen_orig_ + screen_gum[i], mouse_pos);
         float pixel_dist = std::sqrt((axis_closest.X - mouse_pos.X) * (axis_closest.X - mouse_pos.X) + (axis_closest.Y - mouse_pos.Y) * (axis_closest.Y - mouse_pos.Y));
 
         if (pixel_dist < min_dist && pixel_dist < 10.0f)
@@ -112,16 +112,16 @@ void Gizmo::select_axis(const HMM_Mat4& mvp, float screen_w, float screen_h, flo
     switch (selected)
     {
     case -1:
-        active_axis = ActiveAxis::None;
+        active_axis_ = ActiveAxis::None;
         break;
     case 0:
-        active_axis = ActiveAxis::X;
+        active_axis_ = ActiveAxis::X;
         break;
     case 1:
-        active_axis = ActiveAxis::Y;
+        active_axis_ = ActiveAxis::Y;
         break;
     case 2:
-        active_axis = ActiveAxis::Z;
+        active_axis_ = ActiveAxis::Z;
         break;
     }
 }
@@ -130,19 +130,19 @@ void Gizmo::drag_axis(float mouse_dx, float mouse_dy, float screen_w, float scre
 {
     HMM_Vec3 dragging_axis_wrld = {};
     HMM_Vec2 dragging_axis_scr = {};
-    switch (active_axis)
+    switch (active_axis_)
     {
     case ActiveAxis::X:
-        dragging_axis_wrld = x_axis;
-        dragging_axis_scr = screen_x;
+        dragging_axis_wrld = x_axis_;
+        dragging_axis_scr = screen_x_;
         break;
     case ActiveAxis::Y:
-        dragging_axis_wrld = y_axis;
-        dragging_axis_scr = screen_y;
+        dragging_axis_wrld = y_axis_;
+        dragging_axis_scr = screen_y_;
         break;
     case ActiveAxis::Z:
-        dragging_axis_wrld = z_axis;
-        dragging_axis_scr = screen_z;
+        dragging_axis_wrld = z_axis_;
+        dragging_axis_scr = screen_z_;
         break;
     default:
         break;
@@ -150,7 +150,7 @@ void Gizmo::drag_axis(float mouse_dx, float mouse_dy, float screen_w, float scre
     mouse_dx /= screen_w;
     mouse_dy /= screen_h;
     float drag_amount = HMM_DotV2(dragging_axis_scr, HMM_V2(mouse_dx,mouse_dy));
-    origin = HMM_Add(origin, HMM_MulV3F(dragging_axis_wrld, drag_amount));
+    origin_ = HMM_Add(origin_, HMM_MulV3F(dragging_axis_wrld, drag_amount));
 }
 
 void Gizmo::update_screen_axes(const HMM_Mat4 &mvp, float screen_w, float screen_h)
@@ -160,55 +160,52 @@ void Gizmo::update_screen_axes(const HMM_Mat4 &mvp, float screen_w, float screen
         HMM_Vec4 world_pos = HMM_V4(pt.X, pt.Y, pt.Z, 1.0f);
         HMM_Vec4 clip_pos = HMM_MulM4V4(mvp, world_pos);
         HMM_Vec3 ndc = HMM_V3(clip_pos.X / clip_pos.W, clip_pos.Y / clip_pos.W, clip_pos.Z / clip_pos.W);
-        float screen_x = (ndc.X + 1.0f) * screen_w / 2.0f;
-        float screen_y = (1.0f - ndc.Y) * screen_h / 2.0f;
+        float screen_x_ = (ndc.X + 1.0f) * screen_w / 2.0f;
+        float screen_y_ = (1.0f - ndc.Y) * screen_h / 2.0f;
 
-        return HMM_V2(screen_x, screen_y);
+        return HMM_V2(screen_x_, screen_y_);
     };
     // Project gumball on screen
-    screen_orig = project_to_screen(origin);
-    HMM_Vec2 proj_x_tip = project_to_screen(HMM_AddV3(origin, HMM_MulV3F(x_axis, world_scale)));
-    HMM_Vec2 proj_y_tip = project_to_screen(HMM_AddV3(origin, HMM_MulV3F(y_axis, world_scale)));
-    HMM_Vec2 proj_z_tip = project_to_screen(HMM_AddV3(origin, HMM_MulV3F(z_axis, world_scale)));
+    screen_orig_ = project_to_screen(origin_);
+    HMM_Vec2 proj_x_tip = project_to_screen(HMM_AddV3(origin_, HMM_MulV3F(x_axis_, world_scale_)));
+    HMM_Vec2 proj_y_tip = project_to_screen(HMM_AddV3(origin_, HMM_MulV3F(y_axis_, world_scale_)));
+    HMM_Vec2 proj_z_tip = project_to_screen(HMM_AddV3(origin_, HMM_MulV3F(z_axis_, world_scale_)));
 
     // Get vectors on screen
-    screen_x = HMM_Sub(proj_x_tip, screen_orig);
-    screen_y = HMM_Sub(proj_y_tip, screen_orig);
-    screen_z = HMM_Sub(proj_z_tip, screen_orig);
+    screen_x_ = HMM_Sub(proj_x_tip, screen_orig_);
+    screen_y_ = HMM_Sub(proj_y_tip, screen_orig_);
+    screen_z_ = HMM_Sub(proj_z_tip, screen_orig_);
 }
 
-
-
 // Render functions
-HMM_Mat4 Gizmo::set_gumball_mvp(const HMM_Vec3& cam_pos, const HMM_Mat4& view, const HMM_Mat4& proj, float gumball_size)
+void Gizmo::set_gumball_mvp(const HMM_Vec3& cam_pos, const HMM_Mat4& view, const HMM_Mat4& proj, float gumball_size)
 {
-    float dist = HMM_LenV3(HMM_SubV3(origin, cam_pos));
-    world_scale = dist * gumball_size;
-    HMM_Mat4 gumball_scale = HMM_Scale(HMM_V3(world_scale, world_scale, world_scale));
-    HMM_Mat4 gumball_trans = HMM_Translate(origin);
+    float dist = HMM_LenV3(HMM_SubV3(origin_, cam_pos));
+    world_scale_ = dist * gumball_size;
+    HMM_Mat4 gumball_scale = HMM_Scale(HMM_V3(world_scale_, world_scale_, world_scale_));
+    HMM_Mat4 gumball_trans = HMM_Translate(origin_);
     HMM_Mat4 gumball_model = HMM_MulM4(gumball_trans, gumball_scale);
-    gumball_mvp = HMM_MulM4(proj, HMM_MulM4(view, gumball_model));
-    return gumball_mvp;
+    gumball_mvp_ = HMM_MulM4(proj, HMM_MulM4(view, gumball_model));
 }
 
 void Gizmo::generate_gizmo()
 {
     std::array<sg_color,4> colors = {sg_red, sg_green, sg_blue, sg_white_smoke};
-    std::array<HMM_Vec3,3> axes = {x_axis, y_axis, z_axis};
+    std::array<HMM_Vec3,3> axes = {x_axis_, y_axis_, z_axis_};
     const float two_pi = 2.0f * HMM_PI;
     float radius = 0.03f;
     int slices = 8;
-    gizmo_verts.resize(slices * 2 * 7 * 3, 0.0f);
-    gizmo_indices.resize(slices * 6 * 3, 0);
+    gizmo_verts_.resize(slices * 2 * 7 * 3, 0.0f);
+    gizmo_indices_.resize(slices * 6 * 3, 0);
 
     auto insert_pt = [&](int idx, int col_idx, HMM_Vec3 pt){
-        gizmo_verts[idx] = pt.X;
-        gizmo_verts[idx+1] = pt.Y;
-        gizmo_verts[idx+2] = pt.Z;
-        gizmo_verts[idx+3] = colors[col_idx].r;
-        gizmo_verts[idx+4] = colors[col_idx].g;
-        gizmo_verts[idx+5] = colors[col_idx].b;
-        gizmo_verts[idx+6] = colors[col_idx].a;
+        gizmo_verts_[idx] = pt.X;
+        gizmo_verts_[idx+1] = pt.Y;
+        gizmo_verts_[idx+2] = pt.Z;
+        gizmo_verts_[idx+3] = colors[col_idx].r;
+        gizmo_verts_[idx+4] = colors[col_idx].g;
+        gizmo_verts_[idx+5] = colors[col_idx].b;
+        gizmo_verts_[idx+6] = colors[col_idx].a;
     };
 
     // Generate a cylinder for each axis
@@ -253,67 +250,32 @@ void Gizmo::generate_gizmo()
             if (j == (slices - 1))
             {
                 // Tri 1 CCW
-                gizmo_indices[write_pos] = bv;
-                gizmo_indices[write_pos + 1] = i*slices*2; // cyl[0]
-                gizmo_indices[write_pos + 2] = bv + 1;
+                gizmo_indices_[write_pos] = bv;
+                gizmo_indices_[write_pos + 1] = i*slices*2; // cyl[0]
+                gizmo_indices_[write_pos + 2] = bv + 1;
                 // Tri 2 CCW
-                gizmo_indices[write_pos + 3] = i*slices*2; // cyl[0]
-                gizmo_indices[write_pos + 4] = i*slices*2+1; // cyl[1]
-                gizmo_indices[write_pos + 5] = bv + 1;
+                gizmo_indices_[write_pos + 3] = i*slices*2; // cyl[0]
+                gizmo_indices_[write_pos + 4] = i*slices*2+1; // cyl[1]
+                gizmo_indices_[write_pos + 5] = bv + 1;
             }
 
             else
             {
                 // Tri 1 CCW
-                gizmo_indices[write_pos] = bv;
-                gizmo_indices[write_pos + 1] = bv + 2;
-                gizmo_indices[write_pos + 2] = bv + 1;
+                gizmo_indices_[write_pos] = bv;
+                gizmo_indices_[write_pos + 1] = bv + 2;
+                gizmo_indices_[write_pos + 2] = bv + 1;
                 // Tri 2 CCW
-                gizmo_indices[write_pos + 3] = bv + 2;
-                gizmo_indices[write_pos + 4] = bv + 3;
-                gizmo_indices[write_pos + 5] = bv + 1;
+                gizmo_indices_[write_pos + 3] = bv + 2;
+                gizmo_indices_[write_pos + 4] = bv + 3;
+                gizmo_indices_[write_pos + 5] = bv + 1;
             }
         }
     }
 }
 
-void Gizmo::create_axis_buffer()
+void Gizmo::create_gpubuffer()
 {
-    // Vertex buffer
-    sg_buffer_desc vbuf_desc = {};
-    vbuf_desc.data = sg_range{gizmo_verts.data(), gizmo_verts.size() * sizeof(float)}; 
-    vbuf_desc.label = "Gizmo_vertices";
-    gizmo_vtx_buf = sg_make_buffer(vbuf_desc);
-
-    // Index buffer
-    sg_buffer_desc ibuf_desc = {};
-    ibuf_desc.usage.index_buffer = true;
-    ibuf_desc.data.ptr = gizmo_indices.data();
-    ibuf_desc.data.size = gizmo_indices.size() * sizeof(uint16_t);
-    ibuf_desc.label = "Gizmo_indices";
-    gizmo_idx_buf = sg_make_buffer(ibuf_desc);
-
-    gizmo_bind = {};
-    gizmo_bind.vertex_buffers[0] = gizmo_vtx_buf;
-    gizmo_bind.index_buffer = gizmo_idx_buf;
-}
-
-void Gizmo::render_gizmo(const HMM_Mat4 &mvp)
-{
-    sg_apply_bindings(gizmo_bind);
-
-    // Struct for shader
-    vs_params_t params = {};
-    memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.draw_mode = 0;
-    params.point_size = 1.0f;
-
-    sg_apply_uniforms(0, SG_RANGE_REF(params));
-    sg_draw(0, gizmo_indices.size(), 1);
-}
-
-Gizmo::~Gizmo()
-{
-    sg_destroy_buffer(gizmo_vtx_buf);
-    sg_destroy_buffer(gizmo_idx_buf);
+    gizmo_buf_ = std::move(GpuBuffer(gizmo_verts_.size()/7,7, true, "Gizmo_indices_", gizmo_indices_.size(), 1.0f, 0.0f, gizmo_indices_));
+    gizmo_buf_.update_buffer(gizmo_verts_);
 }

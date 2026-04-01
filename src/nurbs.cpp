@@ -4,14 +4,13 @@
 #include "shader.h"
 
 #include "stdio.h"
-#include <vector>
 #include <cassert>
 #include <cmath>
 #include <set>
-#include <string>
 #include <limits>
 
 #include "nurbs.h"
+
 
 ///// Utility functions /////
 std::vector<float> colour_points(const std::vector<float> &control_points, float r, float g, float b, float a)
@@ -230,61 +229,34 @@ void NURBS_spline::calc_weighted_pts()
 
 void NURBS_spline::create_buffers()
 {
-    // Create empty dynamic buffers
-    sg_buffer_desc crv_buf_desc = {};
-    crv_buf_desc.size = (num_pts+1) * 7 * sizeof(float);
-    crv_buf_desc.usage.dynamic_update = true;    
-    crv_buf_desc.label = "bspline_buffer";
-    crv_vtx_buf = sg_make_buffer(crv_buf_desc);
-
-    crv_bind = {};
-    crv_bind.vertex_buffers[0] = this->crv_vtx_buf;
-
-    // Create control point buffer
-    sg_buffer_desc crv_pt_buf_desc = {};
-    crv_pt_buf_desc.size = control_points.size()/3 * 7 * sizeof(float);
-    crv_pt_buf_desc.usage.dynamic_update = true;
-    crv_pt_buf_desc.label = "bspline_cp_buffer";
-    control_pts_buf = sg_make_buffer(crv_pt_buf_desc);
-
-    cp_bind = {};
-    cp_bind.vertex_buffers[0] = this->control_pts_buf;
-
-    // Create knot buffer
-    sg_buffer_desc knot_buf_desc = {};
-    knot_buf_desc.size = knot_vector.size() * 7 * sizeof(float);
-    knot_buf_desc.usage.dynamic_update = true;
-    knot_buf_desc.label = "bspline_knot_buffer";
-    knots_buf = sg_make_buffer(knot_buf_desc);
-
-    knots_bind = {};
-    knots_bind.vertex_buffers[0] = this->knots_buf;
-
-    knots_markers.resize((knot_vector.size()-6) * 7, 0.0f);
-
-    // Create point on curve buffer
-    sg_buffer_desc pcrv_desc = {};
-    pcrv_desc.size = sizeof(pt_crv);
-    pcrv_desc.usage.dynamic_update = true;
-    pcrv_desc.label = "bspline_point_on_crv_buffer";
-    pt_on_crv_buf = sg_make_buffer(pcrv_desc);
-
-    pt_on_crv_bind = {};
-    pt_on_crv_bind.vertex_buffers[0] = this->pt_on_crv_buf;
+    crv_vtx_buf_ = GpuBuffer((num_pts + 1), 7, true, "curve_vtx_buf", (num_pts + 1), 1.0f, 0.0f);
+    cp_buf_ = GpuBuffer(control_points.size() / 3, 7, true, "control_points_buf", control_points.size() / 3, 6.0f, 0.0f);
+    knot_buf_ = GpuBuffer(knot_vector.size(), 7, true, "knot_buf", knots_markers.size() / 7, 5.0f, 0.0f);
+    pt_on_crv_buf_ = GpuBuffer(1, 7, true, "pt_on_crv_buf", 1, 10.0f, 0.0f);
 }
 
-NURBS_spline::NURBS_spline(std::vector<float> cp, int degree, int resolution, std::vector<float> knots, std::vector<float> weights_in)
+void NURBS_spline::update_buffer()
+{
+    crv_vtx_buf_.update_buffer(crv_pts);
+    cp_buf_.update_buffer(color_cp);
+
+    if (show_knots) knot_buf_.update_buffer(knots_markers);
+
+    if (show_pt_on_crv) pt_on_crv_buf_.update_buffer(pt_crv);
+
+    if (show_aabb) aabb_buf_.update_buffer(aabb_pts);
+}
+
+NURBS_spline::NURBS_spline(const std::vector<float>& cp, int degree, int resolution, const std::vector<float>& knots, const std::vector<float>& weights_in)
+    : n{static_cast<int>(cp.size() / 3 - 1)}, p{degree}, num_pts{resolution}
 {
     // Control points
     control_points = std::move(cp);
-    
     // Parameters
-    n = control_points.size() / 3 - 1;
-    p = degree;
-    num_pts = resolution;
     show_influence = false;
     show_knots = false;
     show_aabb = false;
+    show_pt_on_crv = false;
 
     // Knot vector
     if (knots.empty())
@@ -302,6 +274,7 @@ NURBS_spline::NURBS_spline(std::vector<float> cp, int degree, int resolution, st
         knot_vector = std::move(knots);
     }
 
+
     // Weights
     if(weights_in.empty())
     {
@@ -309,9 +282,11 @@ NURBS_spline::NURBS_spline(std::vector<float> cp, int degree, int resolution, st
     }
     else this->weights = std::move(weights_in);
 
+    knots_markers.resize((knot_vector.size() - p * 2) * 7, 0.0f);
+
     // Create the 4D homogeneous control points array
     calc_weighted_pts();
-    create_buffers();    
+    create_buffers();
 }
 
 void NURBS_spline::curve_point(float u, float *out_pos)
@@ -371,6 +346,7 @@ void NURBS_spline::add_cp(HMM_Vec3 new_pos)
     calc_knots();
     weights.push_back(1.0f);
     calc_weighted_pts();
+
     // Rebuild buffers and curve geometry
     regenerate_curve();
 }
@@ -497,15 +473,7 @@ void NURBS_spline::insert_knot(float u, int r, bool rebuild_bufs)
 
 void NURBS_spline::regenerate_curve()
 {
-    // Rebuild buffers
-    sg_destroy_buffer(crv_vtx_buf);
-    sg_destroy_buffer(control_pts_buf);
-    sg_destroy_buffer(knots_buf);
-    sg_destroy_buffer(pt_on_crv_buf);
-    sg_destroy_buffer(aabb_buf);
     create_buffers();
-
-    // Regenerate curve
     generate();
 }
 
@@ -649,26 +617,16 @@ void NURBS_spline::create_aabb_boxes()
         }
     }
     aabb_pts = std::move(box_pts);
-    create_aabb_buf();
+    aabb_buf_ = GpuBuffer(aabb_pts.size()/7, 7, true, "aabb_buf",aabb_pts.size()/7, 1.0f, 0);
 }
 
-void NURBS_spline::create_aabb_buf()
-{
-    if(aabb_buf.id != 0) sg_destroy_buffer(aabb_buf);
-
-    sg_buffer_desc aabb_desc = {};
-    aabb_desc.size = aabb_pts.size() * sizeof(float);
-    aabb_desc.usage.dynamic_update = true;
-    aabb_desc.label = "bspline_aabb_buffer";
-    aabb_buf = sg_make_buffer(aabb_desc);
-
-    aabb_bind = {};
-    aabb_bind.vertex_buffers[0] = this->aabb_buf;
-}
 void NURBS_spline::generate(int selected_idx)
 {
     crv_pts.resize((num_pts + 1) * 7, 0.0f);
     arc_lengths.resize((num_pts + 1), 0.0f);
+    knots_markers.resize((knot_vector.size() - p * 2) * 7, 0.0f);
+
+    
     int idx = 0;
     for (int i = 0; i <= num_pts; i++)
     {
@@ -744,112 +702,13 @@ void NURBS_spline::generate(int selected_idx)
     extract_bezier_segments();
 }
 
-// Render functions
-void NURBS_spline::update_buffer()
-{
-    sg_update_buffer(crv_vtx_buf, sg_range{crv_pts.data(), crv_pts.size() * sizeof(float)});
-    sg_update_buffer(control_pts_buf, sg_range{color_cp.data(), color_cp.size() * sizeof(float)});
-    if (show_knots)
-    {
-        sg_update_buffer(knots_buf, sg_range{knots_markers.data(), knots_markers.size() * sizeof(float)});
-    }
-    if (show_pt_on_crv)
-    {
-        sg_update_buffer(pt_on_crv_buf, SG_RANGE(pt_crv));
-    }
-    if (show_aabb)
-    {
-        sg_update_buffer(aabb_buf, sg_range{aabb_pts.data(), aabb_pts.size() * sizeof(float)});
-    }
-}
-
-void NURBS_spline::render_spline(const HMM_Mat4 &mvp) const
-{
-    sg_apply_bindings(crv_bind);
-    // Struct for shader
-    vs_params_t params = {};
-    memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 1.0f;
-    params.draw_mode = 0;
-
-    sg_apply_uniforms(0, SG_RANGE_REF(params));
-    sg_draw(0, this->num_pts + 1, 1);
-}
-
-void NURBS_spline::render_control_points(const HMM_Mat4 &mvp) const
-{
-    sg_apply_bindings(cp_bind);
-    // Struct for shader
-    vs_params_t params = {};
-    memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 6.0f;
-    params.draw_mode = 0;
-
-    sg_apply_uniforms(0, SG_RANGE_REF(params));
-    sg_draw(0, n + 1, 1);
-}
-
-void NURBS_spline::render_knots(const HMM_Mat4 &mvp) const
-{
-    sg_apply_bindings(knots_bind);
-    // Struct for shader
-    vs_params_t params = {};
-    memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 8.0f;
-    params.draw_mode = 0;
-
-    sg_apply_uniforms(0, SG_RANGE_REF(params));
-    sg_draw(0, knots_markers.size()/7, 1);
-}
-
-void NURBS_spline::render_pt_on_crv(const HMM_Mat4 &mvp) const
-{
-    sg_apply_bindings(pt_on_crv_bind);
-    // Struct for shader
-    vs_params_t params = {};
-    memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 8.0f;
-    params.draw_mode = 0;
-
-    sg_apply_uniforms(0, SG_RANGE_REF(params));
-    sg_draw(0, 1, 1);
-}
-
-void NURBS_spline::render_aabb(const HMM_Mat4 &mvp) const
-{
-    sg_apply_bindings(aabb_bind);
-    // Struct for shader
-    vs_params_t params = {};
-    memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 8.0f;
-    params.draw_mode = 0;
-
-    sg_apply_uniforms(0, SG_RANGE_REF(params));
-    sg_draw(0, aabb_pts.size()/7, 1);
-}
-
-NURBS_spline::~NURBS_spline()
-{
-    sg_destroy_buffer(crv_vtx_buf);
-    sg_destroy_buffer(control_pts_buf);
-    sg_destroy_buffer(knots_buf);
-    sg_destroy_buffer(pt_on_crv_buf);
-    sg_destroy_buffer(aabb_buf);
-}
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////
 ///////////////////////////////////////////////////////////////////////////////////////////////
 ///// NURBS Surface functions //////////////////////////////////////////////////////////////////////
 void NURBS_surface::create_buffers()
-{
-    // Create vertex buffer
-    sg_buffer_desc vbuf_desc = {};
-    vbuf_desc.size = mesh_verts.size() * sizeof(float); 
-    vbuf_desc.usage.dynamic_update = true;   
-    vbuf_desc.label = "NURBS_surface_vertices";
-    mesh_vtx_buf = sg_make_buffer(vbuf_desc);
-
-    // Create index buffer
+{ 
+    // Create mesh vertex index buffer
     indices.resize(num_indices, 0);
     int quad_idx = 0;
     for (int i = 0; i < resolution; i++)
@@ -869,27 +728,6 @@ void NURBS_surface::create_buffers()
             quad_idx++;
         }
     }
-
-    sg_buffer_desc ibuf_desc = {};
-    ibuf_desc.usage.index_buffer = true;
-    ibuf_desc.data.ptr = indices.data();
-    ibuf_desc.data.size = indices.size() * sizeof(uint16_t);
-    ibuf_desc.label = "NURBS_surface_indices";
-    mesh_idx_buf = sg_make_buffer(ibuf_desc);
-
-    mesh_bind = {};
-    mesh_bind.vertex_buffers[0] = mesh_vtx_buf;
-    mesh_bind.index_buffer = mesh_idx_buf;
-
-    // Control point buffer
-    sg_buffer_desc cp_buf = {};
-    cp_buf.size = control_points.size() / 3 * 7 * sizeof(float);
-    cp_buf.usage.dynamic_update = true;   
-    cp_buf.label = "NURBS_control_points";
-    control_pts_buf = sg_make_buffer(cp_buf);
-
-    scp_bind = {};
-    scp_bind.vertex_buffers[0] = control_pts_buf;
 
     // Control polygon index buffer
     int num_seg = 2*(u_num_pts-1)*(v_num_pts-1) + (u_num_pts-1) + (v_num_pts-1);
@@ -913,18 +751,18 @@ void NURBS_surface::create_buffers()
         }
     }
 
-    sg_buffer_desc ctrl_ibuf_desc = {};
-    ctrl_ibuf_desc.usage.index_buffer = true;
-    ctrl_ibuf_desc.data.ptr = ctrl_indices.data();
-    ctrl_ibuf_desc.data.size = ctrl_indices.size() * sizeof(uint16_t);
-    ctrl_ibuf_desc.label = "NURBS_ctrl_polygon_indices";
-    ctrl_poly_idx_buf = sg_make_buffer(ctrl_ibuf_desc);
-
-    ctrl_poly_bind = {};
-    ctrl_poly_bind.vertex_buffers[0] = control_pts_buf;
-    ctrl_poly_bind.index_buffer = ctrl_poly_idx_buf;
+    // Create buffers
+    mesh_vtx_buf_ = GpuBuffer(mesh_verts.size(), 7, true, "curve_vtx_buf", num_indices, 1.0f, 0.0f, indices);
+    control_pts_buf_ = GpuBuffer(control_points.size() / 3, 7, true, "control_points_buf", control_points.size() / 3, 6.0f, 0.0f);
+    control_poly_buf_ = GpuBuffer(control_points.size() / 3, 7, true, "control_poly_buf", ctrl_indices.size(), 3.0f, 0.0f, ctrl_indices);
 }
 
+void NURBS_surface::update_buffer()
+{
+    mesh_vtx_buf_.update_buffer(mesh_verts);
+    control_pts_buf_.update_buffer(color_cp);
+    control_poly_buf_.update_buffer(color_cp);
+}
 
 NURBS_surface::NURBS_surface(std::vector<float> cp, std::vector<float> u_knot_vector, std::vector<float> v_knot_vector, 
                             int degree, int u_num, int v_num, int res, std::vector<float> weights_in)
@@ -988,7 +826,6 @@ NURBS_surface::NURBS_surface(std::vector<float> cp, std::vector<float> u_knot_ve
     create_buffers();
     color_cp = std::move(colour_points(control_points, 0.5f,0.2f,0.9f,1.0f));
 }
-
 
 void NURBS_surface::surface_point(float u, float v, float *out_pos)
 {
@@ -1129,68 +966,35 @@ void NURBS_surface::update_srf_cp(int index, HMM_Vec3 new_pos)
     generate_mesh();
 }
 
-void NURBS_surface::update_buffer()
-{
-    sg_update_buffer(mesh_vtx_buf, sg_range{mesh_verts.data(), mesh_verts.size() * sizeof(float)});
-    sg_update_buffer(control_pts_buf, sg_range{color_cp.data(), color_cp.size() * sizeof(float)});
-}
 
 void NURBS_surface::render_surface(const HMM_Mat4 &mvp, const HMM_Mat4 &view, bool matcap_loaded) const
 {
-    sg_apply_bindings(mesh_bind);
-
-    if (matcap_loaded)
-    {
-        // Matcap shader
-        vs_mat_params_t params = {};
-        memcpy(params.mvp, &mvp, sizeof(float) * 16);
-        memcpy(params.view, &view, sizeof(float) * 16);
-        sg_apply_uniforms(0, SG_RANGE_REF(params));
-    }
-    else
-    {
-        vs_params_t params = {};
-        memcpy(params.mvp, &mvp, sizeof(float) * 16);
-        params.draw_mode = 0;
-        params.point_size = 0.0f;
-        sg_apply_uniforms(0, SG_RANGE_REF(params));
-    }
-
-    sg_draw(0, num_indices, 1);
 }
 
 void NURBS_surface::render_control_points(const HMM_Mat4 &mvp) const
 {
-    sg_apply_bindings(scp_bind);
+    // sg_apply_bindings(scp_bind);
 
-    // Struct for shader
-    vs_params_t params = {};
-    memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 6.0f;
-    params.draw_mode = 0;
+    // // Struct for shader
+    // vs_params_t params = {};
+    // memcpy(params.mvp, &mvp, sizeof(float)*16);
+    // params.point_size = 6.0f;
+    // params.draw_mode = 0;
 
-    sg_apply_uniforms(0, SG_RANGE_REF(params));
-    sg_draw(0, control_points.size()/3, 1);
+    // sg_apply_uniforms(0, SG_RANGE_REF(params));
+    // sg_draw(0, control_points.size()/3, 1);
 }
 
 void NURBS_surface::render_control_polygon(const HMM_Mat4 &mvp) const
 {
-    sg_apply_bindings(ctrl_poly_bind);
+    // sg_apply_bindings(ctrl_poly_bind);
 
-    // Struct for shader
-    vs_params_t params = {};
-    memcpy(params.mvp, &mvp, sizeof(float)*16);
-    params.point_size = 6.0f;
-    params.draw_mode = 0;
+    // // Struct for shader
+    // vs_params_t params = {};
+    // memcpy(params.mvp, &mvp, sizeof(float)*16);
+    // params.point_size = 6.0f;
+    // params.draw_mode = 0;
 
-    sg_apply_uniforms(0, SG_RANGE_REF(params));
-    sg_draw(0, ctrl_indices.size(), 1);
-}
-
-NURBS_surface::~NURBS_surface()
-{
-    sg_destroy_buffer(control_pts_buf);
-    sg_destroy_buffer(mesh_vtx_buf);
-    sg_destroy_buffer(mesh_idx_buf);
-    sg_destroy_buffer(ctrl_poly_idx_buf);
+    // sg_apply_uniforms(0, SG_RANGE_REF(params));
+    // sg_draw(0, ctrl_indices.size(), 1);
 }

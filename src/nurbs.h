@@ -5,6 +5,8 @@
 #include <string>
 #include <array>
 
+#include "render_utils.h"
+
 
 ///// NURBS Spline class /////
 class NURBS_spline
@@ -13,8 +15,9 @@ class NURBS_spline
         std::vector<float> control_points;
         bool show_influence, show_knots, show_pt_on_crv, show_aabb;
         float length;
+        GpuBuffer crv_vtx_buf_, cp_buf_, knot_buf_, pt_on_crv_buf_, aabb_buf_;
         
-        NURBS_spline(std::vector<float> cp, int degree, int num_pts, std::vector<float> knots={}, std::vector<float> weights_in={});
+        NURBS_spline(const std::vector<float>& cp, int degree, int num_pts, const std::vector<float>& knots={}, const std::vector<float>& weights_in={});
     
         // Geometry
         void update_cp(int index, HMM_Vec3 new_pos);
@@ -32,30 +35,17 @@ class NURBS_spline
 
         // Rendering
         void update_buffer();
-        void render_spline(const HMM_Mat4 &mvp) const;
-        void render_control_points(const HMM_Mat4 &mvp) const;
-        void render_knots(const HMM_Mat4 &mvp) const;
-        void render_pt_on_crv(const HMM_Mat4 &mvp) const;
-
-        // Debugging
-        void render_aabb(const HMM_Mat4 &mvp) const;
-
-
-        ~NURBS_spline();
 
     private:
-        // GPU resources
-        sg_buffer crv_vtx_buf, control_pts_buf, knots_buf, pt_on_crv_buf, aabb_buf = {};
-        sg_bindings crv_bind, cp_bind, knots_bind, pt_on_crv_bind, aabb_bind;
         // Geometry 
         std::vector<float> knot_vector, knots_markers, weights, weighted_points, basis_funs;
         std::vector<float> color_cp, crv_pts;
         std::vector<float> arc_lengths;
         std::vector<float> aabb_pts;
+        std::vector<float> pt_crv = std::vector<float>(7,0.0f);
         
         std::vector<std::vector<float>> bezier_segments;    //[seg][4D_pts * (p+1)] 
         std::vector<std::array<float,6>> bezier_aabb;   //[seg][minX,minY,minZ,maxX,maxY,maxZ] 
-        float pt_crv[7];
         int n, p, num_pts;
 
         // Helpers
@@ -63,9 +53,6 @@ class NURBS_spline
         void calc_weighted_pts();
         void calc_knots();
         void create_aabb_boxes();
-        void create_aabb_buf();
-
-
         void create_buffers();
 };
 
@@ -76,6 +63,7 @@ class NURBS_surface
     public:
         std::vector<float> control_points;
         sg_bindings mesh_bind;
+        GpuBuffer mesh_vtx_buf_, control_pts_buf_, control_poly_buf_;
 
         NURBS_surface(std::vector<float> cp, std::vector<float> u_knot_vector, std::vector<float> v_knot_vector, 
                     int degree, int u_num, int v_num, int resolution, std::vector<float> weights_in = {});
@@ -88,13 +76,7 @@ class NURBS_surface
         void render_control_points(const HMM_Mat4 &mvp) const;
         void render_control_polygon(const HMM_Mat4 &mvp) const;
 
-        ~NURBS_surface();
-
-
-
     private:
-        sg_buffer control_pts_buf, mesh_vtx_buf, mesh_idx_buf, ctrl_poly_idx_buf;
-        sg_bindings scp_bind, ctrl_poly_bind;
         std::vector<float> color_cp, mesh_verts, ctrl_poly, u_knots, v_knots, weights, weighted_points, u_basis_funs, v_basis_funs;
         std::vector<uint16_t> indices, ctrl_indices;
         

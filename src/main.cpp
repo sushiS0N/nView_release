@@ -1,4 +1,4 @@
-#define HANDMADE_MATH_IMPLEMENTATION
+//#define HANDMADE_MATH_IMPLEMENTATION
 #include "HandmadeMath.h"
 
 #include "imgui.h"
@@ -29,12 +29,11 @@
 #include "camera.h"
 #include "gizmo.h"
 #include "nurbs.h"
-//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-// + ADD live weight edit
-//!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+#include "render_utils.h"
+
 // Resolution macros        
-#define RESOLUTION_X 2560.0f 
-#define RESOLUTION_Y 1440.0f 
+#define RESOLUTION_X 1980.0f 
+#define RESOLUTION_Y 1080.0f 
 #define FOV 60.0f * (HMM_PI / 180.0f)
 #define MAX_FILE_SIZE 1024*1024
 
@@ -42,7 +41,7 @@
 // Image loading
 static void response_callback(const sfetch_response_t*);
 static uint8_t buffer[MAX_FILE_SIZE];
-
+    
 // GEOMETRY PARAMETERS
 // NURBS - surface 
 std::vector<float> srf_cp = {
@@ -408,12 +407,11 @@ static void render_ui()
 
             if (state.matcap_loaded)
             {
-                surface->mesh_bind.views[VIEW_tex] = state.bind.views[VIEW_tex];
-                surface->mesh_bind.samplers[SMP_smp] = state.bind.samplers[SMP_smp];
+                surface->mesh_vtx_buf_.bind_.views[VIEW_tex] = state.bind.views[VIEW_tex];
+                surface->mesh_vtx_buf_.bind_.samplers[SMP_smp] = state.bind.samplers[SMP_smp];
             }
             gumball->reset();
             interaction.gumball_mode = false;
-
             state.buf_update_flag = true;
         }
         break;
@@ -445,6 +443,9 @@ void frame()
     state.proj = proj;
     state.view = view;
 
+    // Set the gumball mvp
+    gumball->set_gumball_mvp(camera->calculate_position(), state.view, state.proj, interaction.gumball_size);
+
     // Debugger text
     //print_status_text(sapp_widthf(), sapp_heightf());
 
@@ -459,77 +460,55 @@ void frame()
     simgui_render();
 
     // Draw axis indicator
-    sg_apply_pipeline(state.pip_triangles);
-    world_axis->render_gizmo(mvp);
+    Renderer::draw(world_axis->gizmo_buf_, mvp, PipelineType::triangles);
 
     switch (interaction.mode)
     {
     case MODE_VIEW:
         // Draw surface
-        sg_apply_pipeline(state.matcap_loaded ? state.pip_matcap : state.pip_triangles);
-        surface->render_surface(mvp, view, state.matcap_loaded);
+        Renderer::draw_matcap(surface->mesh_vtx_buf_, mvp, view, state.matcap_loaded);
 
         // Display bspline
-        sg_apply_pipeline(state.pip_curves);
-        bspline->render_spline(mvp);
+        Renderer::draw(bspline->crv_vtx_buf_, mvp, PipelineType::curves);
         break;
+
     case MODE_EDIT_CURVE:
         // Display bspline
-        sg_apply_pipeline(state.pip_curves);
-        bspline->render_spline(mvp);
+        Renderer::draw(bspline->crv_vtx_buf_, mvp, PipelineType::curves);
 
         // Draw control polygon
-        sg_apply_pipeline(state.pip_curves);
-        bspline->render_control_points(mvp);
+        Renderer::draw(bspline->cp_buf_, mvp, PipelineType::curves);
 
         // Draw bspline control points
-        sg_apply_pipeline(state.pip_pts);
-        bspline->render_control_points(mvp);
+        Renderer::draw(bspline->cp_buf_, mvp, PipelineType::points);
 
         // Draw gumball
-        if(gumball->show)
-        {
-            sg_apply_pipeline(state.pip_triangles);
-            gumball->render_gizmo(gumball->set_gumball_mvp(camera->calculate_position(), state.view, state.proj, interaction.gumball_size));
-        }
+        if(gumball->show_) Renderer::draw(gumball->gizmo_buf_, gumball->gumball_mvp_, PipelineType::triangles);
+        
         // Draw bspline markers
-        if (bspline->show_knots)
-        {
-            sg_apply_pipeline(state.pip_pts);
-            bspline->render_knots(mvp);
-        }
-
-        if (bspline->show_pt_on_crv)
-        {
-            sg_apply_pipeline(state.pip_pts);
-            bspline->render_pt_on_crv(mvp);
-        }
-        if (interaction.show_bezier_aabb)
-        {
-            bspline->show_aabb = true;
-            sg_apply_pipeline(state.pip_lines);
-            bspline->render_aabb(mvp);
-        }
+        if (bspline->show_knots) Renderer::draw(bspline->knot_buf_, mvp, PipelineType::points);
+        
+        // Point on curve
+        if (bspline->show_pt_on_crv) Renderer::draw(bspline->pt_on_crv_buf_, mvp, PipelineType::points);
+        
+        // Show AABBs
+        if (interaction.show_bezier_aabb) Renderer::draw(bspline->aabb_buf_, mvp, PipelineType::lines);
         break;
 
     case MODE_EDIT_SURFACE:
         // Draw surface
-        sg_apply_pipeline(state.pip_matcap);
-        surface->render_surface(mvp, view, state.matcap_loaded);
+        Renderer::draw_matcap(surface->mesh_vtx_buf_, mvp, view, state.matcap_loaded);
 
         // Draw surface's control points
-        sg_apply_pipeline(state.pip_pts);
-        surface->render_control_points(mvp);
+        Renderer::draw(surface->control_pts_buf_, mvp, PipelineType::points);
 
-        // Draw surface's control polygon
-        sg_apply_pipeline(state.pip_idx_lines);
-        surface->render_control_polygon(mvp);
+        // // Draw surface's control polygon
+        Renderer::draw(surface->control_poly_buf_, mvp, PipelineType::lines_indexed);
 
         // Draw gumball
-        if(gumball->show)
+        if (gumball->show_)
         {
-            sg_apply_pipeline(state.pip_triangles);
-            gumball->render_gizmo(gumball->set_gumball_mvp(camera->calculate_position(), state.view, state.proj, interaction.gumball_size));
+            Renderer::draw(gumball->gizmo_buf_, gumball->gumball_mvp_, PipelineType::triangles);
         }
         break;
     }
@@ -693,11 +672,11 @@ void event(const sapp_event *ev)
                 {
                     interaction.selected_cp_index = closest_idx;
                     interaction.selected_cp_pos = closest_cp_pos(bspline->control_points, interaction.selected_cp_index);
-                    gumball->origin = interaction.selected_cp_pos;
+                    gumball->origin_ = interaction.selected_cp_pos;
                 }
-                gumball->show = true;
+                gumball->show_ = true;
                 gumball->select_axis(state.mvp, sapp_widthf(), sapp_heightf(), interaction.mouse_x, interaction.mouse_y);
-                if (gumball->active_axis != ActiveAxis::None)
+                if (gumball->active_axis_ != ActiveAxis::None)
                     interaction.dragging = true;
             }
         }
@@ -712,7 +691,7 @@ void event(const sapp_event *ev)
                 state.buf_update_flag = true;
                 update_mouse_pos(ev);
                 gumball->drag_axis(ev->mouse_dx,ev->mouse_dy, sapp_widthf(), sapp_heightf());
-                bspline->update_cp(interaction.selected_cp_index, gumball->origin);
+                bspline->update_cp(interaction.selected_cp_index, gumball->origin_);
             }
             if(interaction.insert_knot)
             {
@@ -737,7 +716,7 @@ void event(const sapp_event *ev)
                 else
                 {
                     interaction.gumball_mode = true;
-                    gumball->show;
+                    gumball->show_;
                 }  
             }
         }
@@ -751,11 +730,11 @@ void event(const sapp_event *ev)
                 {
                     interaction.selected_cp_index = closest_idx;
                     interaction.selected_cp_pos = closest_cp_pos(surface->control_points, interaction.selected_cp_index);
-                    gumball->origin = interaction.selected_cp_pos;
+                    gumball->origin_ = interaction.selected_cp_pos;
                 }
-                gumball->show = true;
+                gumball->show_ = true;
                 gumball->select_axis(state.mvp, sapp_widthf(), sapp_heightf(), interaction.mouse_x, interaction.mouse_y);
-                if (gumball->active_axis != ActiveAxis::None)
+                if (gumball->active_axis_ != ActiveAxis::None)
                     interaction.dragging = true;
             }
         }
@@ -773,7 +752,7 @@ void event(const sapp_event *ev)
                 gumball->drag_axis(ev->mouse_dx,ev->mouse_dy, sapp_widthf(), sapp_heightf());
                 printf("Selected cpi:  %i\n", interaction.selected_cp_index);
                 fflush(stdout);
-                surface->update_srf_cp(interaction.selected_cp_index, gumball->origin);
+                surface->update_srf_cp(interaction.selected_cp_index, gumball->origin_);
             }
         }
 
@@ -831,8 +810,12 @@ static void response_callback(const sfetch_response_t* response)
             view_desc.label = "png_texture_view";
             sg_init_view(state.bind.views[VIEW_tex], view_desc);
 
-            surface->mesh_bind.views[VIEW_tex] = state.bind.views[VIEW_tex];
-            surface->mesh_bind.samplers[SMP_smp] = state.bind.samplers[SMP_smp];
+            surface->mesh_vtx_buf_.bind_.views[VIEW_tex] = state.bind.views[VIEW_tex];
+            surface->mesh_vtx_buf_.bind_.samplers[SMP_smp] = state.bind.samplers[SMP_smp];
+
+            printf("view state id: %u\n", state.bind.views[VIEW_tex].id);
+            printf("view mesh id: %u\n", surface->mesh_vtx_buf_.bind_.views[VIEW_tex].id);
+            fflush(stdout);
 
             state.matcap_loaded = true;
         }
@@ -906,63 +889,8 @@ void init()
     // Create shader
     sg_shader shd = sg_make_shader(shd_shader_desc(sg_query_backend()));
     sg_shader shd_mat = sg_make_shader(shd_matcap_shader_desc(sg_query_backend()));
-
-    // Points pipeline
-    sg_pipeline_desc pip_pts_desc = {};
-    pip_pts_desc.shader = shd;
-    pip_pts_desc.layout.attrs[ATTR_shd_pos].format = SG_VERTEXFORMAT_FLOAT3;
-    pip_pts_desc.layout.attrs[ATTR_shd_color0].format = SG_VERTEXFORMAT_FLOAT4;
-    pip_pts_desc.primitive_type = SG_PRIMITIVETYPE_POINTS;
-    pip_pts_desc.label = "points_pipeline";
-    state.pip_pts = sg_make_pipeline(pip_pts_desc);
-
-    // Single lines pipeline
-    sg_pipeline_desc pip_desc_lines = pip_pts_desc;
-    pip_desc_lines.shader = shd;
-    pip_desc_lines.primitive_type = SG_PRIMITIVETYPE_LINES;
-    pip_desc_lines.label = "lines_pipeline";
-    state.pip_lines = sg_make_pipeline(pip_desc_lines);
-
-    // Indexed lines pipeline
-    sg_pipeline_desc idx_ln_desc = pip_desc_lines;
-    idx_ln_desc.index_type = SG_INDEXTYPE_UINT16;
-    idx_ln_desc.label = "indexed_lines_pipeline";
-    state.pip_idx_lines = sg_make_pipeline(idx_ln_desc);
-
-    // Cruve pipeline
-    sg_pipeline_desc pip_desc_curves = pip_pts_desc;
-    pip_desc_curves.shader = shd;
-    pip_pts_desc.layout.attrs[ATTR_shd_color0].format = SG_VERTEXFORMAT_FLOAT4;
-    pip_desc_curves.primitive_type = SG_PRIMITIVETYPE_LINE_STRIP;
-    pip_desc_curves.label = "lines_pipeline";
-    state.pip_curves = sg_make_pipeline(pip_desc_curves);
-
-    // Mesh pipeline
-    sg_pipeline_desc pip_desc_tri = {};
-    pip_desc_tri.shader = shd;
-    pip_desc_tri.layout.attrs[ATTR_shd_pos].format = SG_VERTEXFORMAT_FLOAT3;
-    pip_desc_tri.layout.attrs[ATTR_shd_color0].format = SG_VERTEXFORMAT_FLOAT4;
-    pip_desc_tri.primitive_type = SG_PRIMITIVETYPE_TRIANGLES;
-    pip_desc_tri.index_type = SG_INDEXTYPE_UINT16;
-    pip_desc_tri.label = "triangle_pipeline";
-    state.pip_triangles = sg_make_pipeline(pip_desc_tri);
-
-    // Mesh matcap pipeline
-    sg_pipeline_desc mat_desc = {};
-    mat_desc.shader = shd_mat;
-    mat_desc.layout.attrs[ATTR_shd_matcap_pos].format = SG_VERTEXFORMAT_FLOAT3;
-    mat_desc.layout.attrs[ATTR_shd_matcap_color0].format = SG_VERTEXFORMAT_FLOAT4;
-    mat_desc.primitive_type = SG_PRIMITIVETYPE_TRIANGLES;
-    mat_desc.index_type = SG_INDEXTYPE_UINT16;
-    //mat_desc.cull_mode = SG_CULLMODE_FRONT;
-    mat_desc.label = "matcap_pipleline";
-    state.pip_matcap = sg_make_pipeline(mat_desc);
-
-    // Vertex pipeline
-    sg_pipeline_desc pip_desc_verts = pip_desc_tri;
-    pip_desc_verts.primitive_type = SG_PRIMITIVETYPE_POINTS;
-    pip_desc_verts.label = "points_pipeline";
-    state.pip_vertices = sg_make_pipeline(pip_desc_verts);
+    // CUSTOM PIPELINE NEW METHOD 
+    Renderer::init(shd, shd_mat);
 
     // Load PNG
     char path_buf[512];
